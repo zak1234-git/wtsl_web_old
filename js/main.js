@@ -1,0 +1,2038 @@
+// 全局变量定义
+let connectedDevices = [];
+let currentDevice = {};
+let usingDefaultData = true; // 默认使用默认数据
+let rssiChartInstance = null;
+let lastUpdateTime = null;
+let bssPollingInterval = null;
+
+let scanResults = []; // 存储扫描结果
+let activeScanFilter = 'all'; // 默认显示所有扫描结果
+
+let refreshTimer = null;
+let isAutoRefreshEnabled = false; // 默认关闭
+
+let autoJoinRequestInProgress = false;
+
+let API_SERVER = {};
+let API_CONFIG = {};
+
+// 信道与带宽限制映射规则
+const CHANNEL_BANDWIDTH_RULES = {
+    // 信道数组：[可用的带宽选项]
+    '625,709,2125,2209,2645,2729': [20, 40],    // 只能选择20M和40M
+    '791,2291,2813': [20],                      // 只能选择20M
+    'default': [20, 40, 80]                     // 其他信道：20M，40M，80M
+};
+
+const BANDWIDTH_CHANNEL_RULES = {
+    // 带宽： [支持的信道数组]
+    20: [41, 125, 209, 291, 375, 459, 541, 625, 709, 791, 1375, 1459, 1541, 1625, 1709, 1791, 1875,
+    1959, 2041, 2125, 2209, 2291, 2479, 2563, 2645, 2729, 2813],
+    40: [41, 125, 209, 291, 375, 459, 541, 625, 709, 1375, 1459, 1541, 1625, 1709, 1791, 1875,
+    1959, 2041, 2125, 2209, 2479, 2563, 2645, 2729],
+    80: [41, 125, 209, 291, 375, 459, 541, 1375, 1459, 1541, 1625, 1709, 1791, 1875,
+    1959, 2041, 2479, 2563]
+};
+
+// 符号类型取值规则（根据提纲中 cp_type 与 s_cfg_idx 的限制）
+const SYMBOL_TYPE_RULES = {
+    0: { 0: [2, 3, 4, 5], 1: [2, 3, 4, 5], 2: [1, 2, 3, 4, 5] },
+    1: { 0: [2, 3, 4, 5], 1: [2, 3, 4, 5], 2: [1, 2, 3, 4, 5] },
+    2: { 0: [2, 3, 4],    1: [2, 3, 4],    2: [1, 2, 3, 4]    },
+    3: { 0: [2, 3],       1: [2, 3],       2: [1, 2, 3]       }
+};
+
+const CP_TYPE_LABELS = {
+    0: '0 常规循环前缀 (5Ts)',
+    1: '1 扩展循环前缀 (14Ts)',
+    2: '2 24Ts 循环前缀',
+    3: '3 42Ts 循环前缀'
+};
+
+const SYSMSG_PERIOD_LABELS = {
+    0: '0 = 64 超帧',
+    1: '1 = 128 超帧',
+    2: '2 = 256 超帧',
+    3: '3 = 512 超帧'
+};
+
+const RANGE_OPT_LABELS = {
+    0: '关闭',
+    1: '开启'
+};
+
+// API服务器配置 - 提取IP和端口为独立变量，方便修改
+//const API_SERVER = {
+//    ip: '',  // API服务器IP地址
+//    port: '8080'      // API服务器端口号
+//};
+//
+//// API配置 - 新增固件升级相关API
+//const API_CONFIG = {
+//    getDevBasicinfoUrl: `http://${API_SERVER.ip}:${API_SERVER.port}/api/v1/getDevBasicinfo`,
+//    getDevConninfoUrl: `http://${API_SERVER.ip}:${API_SERVER.port}/api/v1/getDevConninfo`,
+//    setNodeUrl: `http://${API_SERVER.ip}:${API_SERVER.port}/api/v1/setnode`,
+//    scanGNodesUrl: `http://${API_SERVER.ip}:${API_SERVER.port}/api/v1/scangnodes`,
+//    connectGNodeUrl: `http://${API_SERVER.ip}:${API_SERVER.port}/api/v1/connectgnode`,
+//    // 新增升级相关API
+//    getFirmwareInfoUrl: `http://${API_SERVER.ip}:${API_SERVER.port}/api/v1/getFirmwareInfo`,
+//    upgradeFirmwareUrl: `http://${API_SERVER.ip}:${API_SERVER.port}/api/v1/upgradeFirmware`,
+//    getUpgradeHistoryUrl: `http://${API_SERVER.ip}:${API_SERVER.port}/api/v1/getUpgradeHistory`,
+//    uploadFirmwareUrl: `http://${API_SERVER.ip}:${API_SERVER.port}/api/v1/uploadFirmware`, // 上传API端点
+//    timeout: 10000 // 10秒超时
+//};
+
+// DOM加载完成后初始化
+document.addEventListener('DOMContentLoaded', async () => {
+        // 获取DOM元素
+        window.elements = {
+                // 导航和页面元素
+                mobileMenuButton: document.getElementById('mobile-menu-button'),
+                mobileMenu: document.getElementById('mobile-menu'),
+                navLinks: document.querySelectorAll('.nav-link'),
+                pageSections: document.querySelectorAll('.page-section'),
+                manualScan: document.getElementById('manual-scan'),
+
+                // 设备设置元素
+                deviceSettingsForm: document.getElementById('settings-device-form'),
+                physicalBandwidthSelect: document.getElementById('settings-physical-bandwidth'),
+                serviceBandwidthSelect: document.getElementById('settings-service-bandwidth'),
+                bandwidthWarning: document.getElementById('bandwidth-warning'),
+                channelSelect: document.getElementById('settings-channel'),
+                deviceTypeSelect: document.getElementById('settings-device-type'),
+                settingsSubmit: document.getElementById('settings-submit'),
+                submitLoading: document.getElementById('submit-loading'),
+
+                // 通知元素
+                notification: document.getElementById('notification'),
+                closeNotification: document.getElementById('close-notification'),
+
+                // 设备信息元素
+                connectedDevicesTable: document.getElementById('connected-devices-table'),
+                rssiChart: document.getElementById('rssi-chart'),
+                deviceLoading: document.getElementById('device-loading'),
+                deviceErrorHint: document.getElementById('device-error-hint'),
+                errorHintMessage: document.getElementById('error-hint-message'),
+                retryLoad: document.getElementById('retry-load'),
+                deviceInfoCard: document.getElementById('device-info-card'),
+                connectedDevicesCard: document.getElementById('connected-devices-card'),
+                deviceInfoDefaultIndicator: document.getElementById('device-info-default-indicator'),
+                connectedDevicesDefaultIndicator: document.getElementById('connected-devices-default-indicator'),
+
+                // 图表相关元素
+                chartLoading: document.getElementById('chart-loading'),
+                lastUpdateTimeEl: document.getElementById('last-update-time'),
+                refreshChartBtn: document.getElementById('refresh-chart'),
+                timeRangeBtns: document.querySelectorAll('.time-range-btn'),
+
+                // 节点扫描相关元素
+                scanGnodesButton: document.getElementById('scan-gnodes-button'),
+                scanLoading: document.getElementById('scan-loading'),
+                scanResultHint: document.getElementById('scan-result-hint'),
+                gNodesTable: document.getElementById('g-nodes-table'),
+                backToSettingsButton: document.getElementById('back-to-settings-button'),
+
+                // 升级管理相关元素
+                currentVersionEl: document.getElementById('current-version'),
+                latestVersionEl: document.getElementById('latest-version'),
+                releaseNotesEl: document.getElementById('release-notes'),
+                upgradeButton: document.getElementById('upgrade-button'),
+                upgradeLoading: document.getElementById('upgrade-loading'),
+                firmwareFileInput: document.getElementById('firmware-file'),
+                uploadButton: document.getElementById('upload-button'),
+                uploadLoading: document.getElementById('upload-loading'),
+                upgradeHistoryTable: document.getElementById('upgrade-history-table'),
+                checkUpdateButton: document.getElementById('check-update-button'),
+                checkUpdateLoading: document.getElementById('check-update-loading'),
+                selectedFileName: document.getElementById('selected-file-name'),
+                uploadProgressContainer: document.getElementById('upload-progress-container'),
+                uploadProgressBar: document.getElementById('upload-progress-bar'),
+
+                // 自动入网相关元素
+                autoJoinNetwork: document.getElementById('auto-join-network'),
+                autoJoinLoading: document.getElementById('auto-join-loading'),
+                autoJoinGroup: document.getElementById('auto-join-group'),
+
+                // 高级参数表单元素
+                cpTypeSelect: document.getElementById('settings-cp-type'),
+                symbolTypeSelect: document.getElementById('settings-symbol-type'),
+                sysmsgPeriodSelect: document.getElementById('settings-sysmsg-period'),
+                sCfgIdxSelect: document.getElementById('settings-s-cfg-idx'),
+                powInput: document.getElementById('settings-pow'),
+                rangeOptSelect: document.getElementById('settings-range-opt'),
+                symbolTypeHint: document.getElementById('symbol-type-hint'),
+
+                // 高级信息展示元素
+                deviceCpType: document.getElementById('device-cp-type'),
+                deviceSymbolType: document.getElementById('device-symbol-type'),
+                deviceSysmsgPeriod: document.getElementById('device-sysmsg-period'),
+                deviceSCfgIdx: document.getElementById('device-s-cfg-idx'),
+                devicePow: document.getElementById('device-pow'),
+                deviceRangeOpt: document.getElementById('device-range-opt')
+        };
+
+        const apiConfig = await initApiConfig();
+        // 这里可以调用 API（例如使用 apiConfig.getDevBasicinfoUrl 发送请求）
+        console.log('可使用的接口地址:', apiConfig.getDevBasicinfoUrl);
+
+        // 然后尝试从网络获取
+        init();
+
+        // 初始状态禁用升级按钮
+        disableUpgradeButton(true);
+
+        // 初始化自动入网勾选框默认状态
+        const autoJoinNetworkEl = document.getElementById('auto-join-network');
+        if (autoJoinNetworkEl) {
+                autoJoinNetworkEl.checked = false;
+        }
+
+
+        const autoRefreshToggle = document.getElementById('auto-refresh-toggle');
+
+        // 从localStorage读取保存的状态，默认为false
+        const savedAutoRefreshState = localStorage.getItem('autoRefreshEnabled');
+        if (savedAutoRefreshState !== null) {
+                isAutoRefreshEnabled = savedAutoRefreshState === 'true';
+                autoRefreshToggle.checked = isAutoRefreshEnabled;
+
+                // 如果之前是启用状态，恢复自动刷新
+                if (isAutoRefreshEnabled) {
+                        startAutoRefresh();
+                }
+        }
+
+        // 为自动刷新开关添加事件监听
+        autoRefreshToggle.addEventListener('change', (e) => {
+                isAutoRefreshEnabled = e.target.checked;
+                // 保存状态到localStorage
+                localStorage.setItem('autoRefreshEnabled', isAutoRefreshEnabled);
+
+                if (isAutoRefreshEnabled) {
+                        startAutoRefresh();
+                } else {
+                        stopAutoRefresh();
+                }
+        });
+
+        // updateAutoJoinVisibility();
+
+});
+
+// 停止 BSS 轮询
+function stopBssPolling() {
+    if (bssPollingInterval) {
+        clearInterval(bssPollingInterval);
+        bssPollingInterval = null;
+    }
+}
+
+// 启动 bss 轮询
+async function fetchAndRenderBssInfo() {
+    try {
+        const response = await fetch(API_CONFIG.showBssInfoGNodesUrl, {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' },
+        });
+
+        if (!response.ok) {
+            console.warn('show_bss_info 请求失败:', response.status);
+            return;
+        }
+
+        const result = await response.json();
+        scanResults = result.data;
+        filterScanResults();
+        if (result.success && Array.isArray(result.data)) {
+            console.info('show_bss_info 返回数据: ', result);
+        } else {
+            console.warn('show_bss_info 返回数据异常: ', result);
+        }
+    } catch (error) {
+        console.error('获取 BSS 信息失败：', error);
+    }
+}
+
+function startBssPolling() {
+    stopBssPolling();
+    setTimeout(() => {
+        fetchAndRenderBssInfo(); // 立即加载一次
+    }, 5000);
+    bssPollingInterval = setInterval(fetchAndRenderBssInfo, 2000); //每2秒
+}
+
+/**
+ * 根据设备类型更新自动入网复选框的可见性
+ */
+function updateAutoJoinVisibility() {
+    const autoJoinGroup = document.getElementById('auto-join-group');
+    const type2El = document.getElementById('current-device-type');
+    const dev2Type = type2El.value;
+    const deviceType = currentDevice.sub_role || (currentDevice.type === 0 ? 'GNode' : 'TNode');
+
+    console.log('保存的设备类型:', deviceType, ' currentDeviceType:', dev2Type, ' currentType:', currentDevice.type);
+
+    if (deviceType === 'GNode') {
+        autoJoinGroup.style.display = 'none';
+    } else {
+        autoJoinGroup.style.display = 'block';
+    }
+
+}
+
+
+// 初始化函数：读取配置并生成 API 地址
+async function initApiConfig() {
+  try {
+    // 1. 读取 config.json
+    const response = await fetch('config.json');
+    if (!response.ok) throw new Error(`配置请求失败: ${response.status}`);
+    const config = await response.json();
+
+    // 2. 初始化 API_SERVER（从配置中读取）
+    API_SERVER = {
+        ip: config.serverIp || 'localhost', // 默认为 localhost
+        port: config.port || '8080'   // 默认为 8080
+    };
+
+    // 3. 动态生成 API_CONFIG（使用最新的 ip 和 port）
+    API_CONFIG = {
+      getDevBasicInfoUrl: `http://${API_SERVER.ip}:${API_SERVER.port}/api/v1/nodes/0/basicinfo`,
+      getDevConnInfoUrl: `http://${API_SERVER.ip}:${API_SERVER.port}/api/v1/nodes/0/conninfo`,
+          setNodeUrl: `http://${API_SERVER.ip}:${API_SERVER.port}/api/v1/nodes/0/basicinfo`,
+          scanGNodesUrl: `http://${API_SERVER.ip}:${API_SERVER.port}/api/v1/nodes/0/scan`,
+          showBssInfoGNodesUrl: `http://${API_SERVER.ip}:${API_SERVER.port}/api/v1/nodes/0/show_bss_info`,
+      connectGNodeUrl: `http://${API_SERVER.ip}:${API_SERVER.port}/api/v1/nodes/0/connect`,
+          getFirmwareInfoUrl: `http://${API_SERVER.ip}:${API_SERVER.port}/api/v1/getFirmwareInfo`,
+      upgradeFirmwareUrl: `http://${API_SERVER.ip}:${API_SERVER.port}/api/v1/nodes/0/firmware/upgrade`,
+      getUpgradeHistoryUrl: `http://${API_SERVER.ip}:${API_SERVER.port}/api/v1/getUpgradeHistory`,
+      uploadFirmwareUrl: `http://${API_SERVER.ip}:${API_SERVER.port}/api/v1/nodes/0/firmware/upload`, // 上传API端点
+      autoJoinNetworkUrl: `http://${API_SERVER.ip}:${API_SERVER.port}/api/v1/nodes/0/autoJoinNetwork`,
+      timeout: 10000
+    };
+
+    console.log('API config :', API_CONFIG);
+    return API_CONFIG; // 返回初始化后的配置，供其他逻辑使用
+
+  } catch (error) {
+    console.error('API 配置初始化失败:', error);
+    // 失败时使用默认配置兜底
+    API_CONFIG = {
+      getDevBasicinfoUrl: 'http://localhost:8080/api/v1/nodes/0/basicinfo',
+      getDevConninfoUrl: 'http://localhost:8080/api/v1/nodes/0/conninfo',
+          setNodeUrl: 'http://localhost:8080/api/v1/nodes/0/basicinfo',
+          scanGNodesUrl: 'http://localhost:8080/api/v1/nodes/0/scan',
+      connectGNodeUrl: 'http://localhost:8080/api/v1/nodes/0/connect',
+          getFirmwareInfoUrl: 'http://localhost:8080/api/v1/getFirmwareInfo',
+      upgradeFirmwareUrl: 'http://localhost:8080/api/v1/nodes/0/firmware/upgrade',
+      getUpgradeHistoryUrl: 'http://localhost:8080/api/v1/getUpgradeHistory',
+      uploadFirmwareUrl: 'http://localhost:8080/api/v1/nodes/0/firmware/upload', // 上传API端点
+      autojoinNetworkUrl: `http://localhost:8080/api/v1/nodes/0/autojoinNetwork`,
+      timeout: 10000
+    };
+    return API_CONFIG;
+  }
+}
+
+// 禁用/启用升级按钮
+function disableUpgradeButton(disable) {
+    if (elements.upgradeButton) {
+        elements.upgradeButton.disabled = disable;
+        if (disable) {
+            elements.upgradeButton.classList.add('opacity-50', 'cursor-not-allowed');
+            elements.upgradeButton.title = '请先成功上传固件后再升级';
+        } else {
+            elements.upgradeButton.classList.remove('opacity-50', 'cursor-not-allowed');
+            elements.upgradeButton.title = '';
+        }
+    }
+}
+
+// 页面可见性变化处理
+function handleVisibilityChange() {
+    if (document.hidden) {
+        // 页面不可见时停止刷新
+        console.log('页面不可见，暂停自动刷新');
+        stopAutoRefresh();
+    } else {
+        // 页面可见时检查是否需要重新启动刷新
+        const deviceDisplaySection = document.getElementById('device-display');
+        if (deviceDisplaySection && !deviceDisplaySection.classList.contains('hidden') && isAutoRefreshEnabled) {
+            console.log('页面可见，重新启动自动刷新');
+            startAutoRefresh();
+        }
+    }
+}
+
+// 更新刷新状态指示器
+function updateRefreshStatusIndicator(isEnabled) {
+    const statusIndicator = document.getElementById('refresh-status');
+    if (statusIndicator) {
+        if (isEnabled) {
+            statusIndicator.classList.remove('off');
+            statusIndicator.innerHTML = '<i class="fa fa-refresh animate-spin"></i>开启';
+            statusIndicator.title = '自动刷新已开启，每5秒刷新一次';
+        } else {
+            statusIndicator.classList.add('off');
+            statusIndicator.innerHTML = '<i class="fa fa-pause"></i>关闭';
+            statusIndicator.title = '自动刷新已关闭';
+        }
+    }
+}
+
+// 初始化自动刷新开关
+function initAutoRefreshToggle() {
+    const toggle = document.getElementById('auto-refresh-toggle');
+
+    if (toggle) {
+        // 默认关闭状态
+        toggle.checked = false;
+        isAutoRefreshEnabled = false;
+
+        // 添加切换事件监听
+        toggle.addEventListener('change', function() {
+            isAutoRefreshEnabled = this.checked;
+
+            if (isAutoRefreshEnabled) {
+                console.log('自动刷新已开启');
+                startAutoRefresh();
+                showNotification('自动刷新', '已开启自动刷新功能', false);
+            } else {
+                console.log('自动刷新已关闭');
+                stopAutoRefresh();
+                showNotification('自动刷新', '已关闭自动刷新功能', false);
+            }
+        });
+    }
+}
+
+// 初始化函数
+function init() {
+    initChannelSelect();
+    setupEventListeners();
+    fetchDeviceInfo(); // 页面加载时请求设备信息
+
+    // 初始化自动刷新开关状态
+    initAutoRefreshToggle();
+
+    updateManualScanButtonState();
+}
+
+// 设置事件监听器
+function setupEventListeners() {
+    // 移动端菜单切换
+    elements.mobileMenuButton?.addEventListener('click', () => {
+        elements.mobileMenu?.classList.toggle('hidden');
+    });
+
+    // 导航链接点击
+    elements.navLinks?.forEach(link => {
+        link.addEventListener('click', (e) => {
+            e.preventDefault();
+            const targetId = link.getAttribute('href').substring(1);
+            switchPage(targetId);
+        });
+    });
+
+    // 关闭通知
+    elements.closeNotification?.addEventListener('click', () => {
+        elements.notification?.classList.add('translate-x-full');
+    });
+
+    // 手动扫描
+    elements.manualScan?.addEventListener('click', handleManualScan);
+
+    // 保存设置
+    elements.settingsSubmit?.addEventListener('click', handleSaveSettings);
+    elements.deviceSettingsForm?.addEventListener('submit', (e) => e.preventDefault());
+
+    // 重试加载
+    elements.retryLoad?.addEventListener('click', fetchDeviceInfo);
+    
+    // 节点扫描相关事件
+    elements.scanGNodesButton?.addEventListener('click', scanGNodes);
+    elements.backToSettingsButton?.addEventListener('click', () => {
+        switchPage('device-settings');
+    });
+    
+    // 升级管理相关事件
+    elements.checkUpdateButton?.addEventListener('click', checkForUpdates);
+    elements.upgradeButton?.addEventListener('click', confirmUpgrade);
+    elements.uploadButton?.addEventListener('click', uploadFirmware);
+    
+    // 监听文件选择
+    elements.firmwareFileInput?.addEventListener('change', function(e) {
+        if (elements.selectedFileName && e.target.files.length > 0) {
+            elements.selectedFileName.textContent = e.target.files[0].name;
+            elements.selectedFileName.classList.remove('text-gray-500');
+            elements.selectedFileName.classList.add('text-primary');
+        }
+    });
+    
+    // 新增设备类型变更监听器，确保设置表单与设备信息同步
+    elements.deviceTypeSelect?.addEventListener('change', function() {
+        // 当设置中的设备类型变更时，临时更新currentDevice并刷新显示
+        const newType = this.value;
+        console.log('保存的设备类型:', this.value);
+        currentDevice.type = newType === 'GNode' ? 0 : 1;
+        updateDeviceDisplay();
+        updateManualScanButtonState();
+    });
+
+    // 信道变更监听 - 根据信道更新带宽选项
+    elements.channelSelect?.addEventListener('change', () => {
+        updateBandwidthOptionsByChannel();
+    });
+
+    // 物理带宽变更监听 - 根据带宽更新信道选项
+    elements.physicalBandwidthSelect?.addEventListener('change', () => {
+        updateChannelOptionsByBandwidth();
+        updateServiceBandwidthOptions();
+        validateBandwidthSettings();
+    });
+
+    // 业务带宽变更监听
+    elements.serviceBandwidthSelect?.addEventListener('change', validateBandwidthSettings);
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    const autoJoinNetworkEl = document.getElementById('auto-join-network');
+    if (autoJoinNetworkEl) {
+        autoJoinNetworkEl.addEventListener('change', handleAutoJoinChange);
+    }
+}
+
+// 根据带宽更新信道选项
+function updateChannelOptionsByBandwidth() {
+    const physicalBandwidthSelect = elements.physicalBandwidthSelect;
+    const channelSelect = elements.channelSelect;
+    const bandwidthChannelHint = document.getElementById('bandwidth-channel-hint');
+
+    if (!physicalBandwidthSelect || !channelSelect) {
+        return;
+    } 
+
+    const selectedBandwidth = parseInt(physicalBandwidthSelect.value) || 20;
+
+    // 获取适用的信道规则
+    let availableChannels = [];
+
+    // 根据选择的带宽获取支持的信道
+    if (BANDWIDTH_CHANNEL_RULES[selectedBandwidth]) {
+        availableChannels = BANDWIDTH_CHANNEL_RULES[selectedBandwidth];
+    } else {
+        // 如果带宽值不在规则中， 默认使用20M的信道
+        availableChannels = BANDWIDTH_CHANNEL_RULES[20];
+    }
+    
+    // 根据当前选中的信道
+    const currentSelected = parseInt(channelSelect.value) || availableChannels[0];
+
+    // 清空现有选项
+    channelSelect.innerHTML = '';
+
+    // 添加新的信道选项
+    availableChannels.forEach(channel => {
+        const option = document.createElement('option');
+        option.value = channel;
+        option.textContent = channel;
+        if (channel === currentSelected) {
+            option.selected = true;
+        }
+        channelSelect.appendChild(option);
+    });
+
+    // 如果当前选中的信道不在新选项中， 选择第一个选项
+    if (!availableChannels.includes(currentSelected)) {
+        channelSelect.value = availableChannels[0];
+    }
+
+    // 显示或隐藏限制提示
+    if (bandwidthChannelHint) {
+        if (selectedBandwidth === 40) {
+            bandwidthChannelHint.textContent = '当前带宽40M下, 信道791、2291、2813不可用';
+            bandwidthChannelHint.classList.remove('hidden');
+        } else if (selectedBandwidth === 80) {
+            bandwidthChannelHint.textContent = '当前带宽80M下, 只显示支持的信道';
+            bandwidthChannelHint.classList.remove('hidden');
+        } else {
+            bandwidthChannelHint.classList.add('hidden');
+        }
+    }
+
+    //重新根据信道更新带宽选项（确保一致性）
+    updateBandwidthOptionsByChannel();
+}
+
+// 根据信道更新带宽选项
+function updateBandwidthOptionsByChannel() {
+    const channelSelect = elements.channelSelect;
+    const physicalBandwidthSelect = elements.physicalBandwidthSelect;
+    const bandwidthRestrictionHint = document.getElementById('bandwidth-restriction-hint');
+
+    if (!channelSelect || !physicalBandwidthSelect) {
+        return;
+    }
+
+    const selectedChannel = parseInt(channelSelect.value);
+    
+    // 获取适用的带宽规则
+    let availableBandwidths = [];
+    let showHint = false;
+
+    // 检查是否有特定的信道规则
+    for (const [channelsStr, bandwidths] of Object.entries(CHANNEL_BANDWIDTH_RULES)) {
+        if (channelsStr === 'default') continue;
+
+        const channels = channelsStr.split(',').map(ch => parseInt(ch));
+        if (channels.includes(selectedChannel)) {
+            availableBandwidths = bandwidths;
+            showHint = true;
+            break;
+        }
+    }
+
+    // 如果没有找到特定规则, 使用默认规则
+    if (availableBandwidths.length === 0) {
+        availableBandwidths = CHANNEL_BANDWIDTH_RULES.default;
+        showHint = false;
+    }
+
+    // 保存当前选中的值
+    const currentSelected = parseInt(physicalBandwidthSelect.value) || availableBandwidths[0];
+
+    // 检查当前选中的带宽是否在可用带宽中
+    let finalSelected = currentSelected;
+    if (!availableBandwidths.includes(currentSelected)) {
+        // 如果不在， 选择可用带宽中的最大值
+        finalSelected = Math.max(...availableBandwidths);
+        showHint = true; // 显示提示， 因为带宽被自动调整了
+    }
+
+    // 清空现有选项
+    physicalBandwidthSelect.innerHTML = '';
+
+    // 添加新的带宽选项
+    availableBandwidths.forEach(bandwidth => {
+        const option = document.createElement('option');
+        option.value = bandwidth;
+        option.textContent = `${bandwidth} M`;
+        if (bandwidth === finalSelected) {
+            option.selected = true;
+        }
+        physicalBandwidthSelect.appendChild(option);
+    });
+
+    // 显示或隐藏限制提示
+    if (bandwidthRestrictionHint) {
+        if (showHint) {
+            bandwidthRestrictionHint.textContent = `当前信道${selectedChannel}限制带宽为${availableBandwidths.join('M、')}M`;
+            bandwidthRestrictionHint.classList.remove('hidden');
+        } else {
+            bandwidthRestrictionHint.classList.add('hidden');
+        }
+    }
+
+    // 更新业务带宽选项
+    updateServiceBandwidthOptions();
+
+    // 重新验证带宽设置
+    validateBandwidthSettings();
+}
+
+// 根据物理带宽更新业务带宽选项
+function updateServiceBandwidthOptions() {
+    const physicalBandwidthSelect = elements.physicalBandwidthSelect;
+    const serviceBandwidthSelect = elements.serviceBandwidthSelect;
+
+    if (!physicalBandwidthSelect || !serviceBandwidthSelect) {
+        return;
+    }
+
+    const maxPhysicalBandwidth = parseInt(physicalBandwidthSelect.value) || 20;
+
+    // 保存当前选中的值
+    const currentSelected = parseInt(serviceBandwidthSelect.value) || Math.min(80, maxPhysicalBandwidth);
+
+    // 清空现有选项
+    serviceBandwidthSelect.innerHTML = '';
+
+    // 固定的业务带宽选项： 20M， 40M, 80M
+    const availableServiceBandwidths = [20, 40, 80];
+
+    // 添加不超过物理带宽的业务带宽选项
+    availableServiceBandwidths.forEach(bandwidth => {
+        if (bandwidth <= maxPhysicalBandwidth) {
+            const option = document.createElement('option');
+            option.value = bandwidth;
+            option.textContent = `${bandwidth} M`;
+            if (bandwidth === currentSelected) {
+                option.selected = true;
+            }
+            serviceBandwidthSelect.appendChild(option);
+        }
+    });
+    
+    // 如果当前选中的值不在新选项中，选择最大可用值
+    const availableOptions = Array.from(serviceBandwidthSelect.options).map(opt => parseInt(opt.value));
+    if (!availableOptions.includes(currentSelected)) {
+        if (availableOptions.length > 0) {
+            // 选择最大的可用值
+            const maxAvailable = Math.max(...availableOptions);
+            serviceBandwidthSelect.value = maxAvailable;
+        }
+    }
+
+    // 重新验证带宽设置
+    validateBandwidthSettings();
+}
+
+async function handleAutoJoinChange(event) {
+    const autoJoinNetworkEl = document.getElementById('auto-join-network');
+    const autoJoinLoadingEl = document.getElementById('auto-join-loading');
+
+    if (!autoJoinNetworkEl || !autoJoinLoadingEl || autoJoinRequestInProgress) return;
+
+    const autoJoinFlag = autoJoinNetworkEl.checked ? 1 : 0;
+
+    console.log('自动入网状态改变,发送请求', { aj_flag: autoJoinFlag });
+    // 设置请求进行中标志
+    autoJoinRequestInProgress = true;
+
+    // 显示加载状态
+    autoJoinNetworkEl.disabled = true;
+    autoJoinLoadingEl.classList.remove('hidden');
+
+    try {
+        // 准备发送的数据 - 只包含flag
+        const postData = {
+            aj_flag: autoJoinFlag
+        };
+
+        console.log('发送自动入网请求到：', API_CONFIG.autoJoinNetworkUrl);
+        console.log('请求数据：', postData);
+
+        // 创建超时控制器
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), API_CONFIG.timeout);
+
+        // 发送API请求到专用端点
+        const response = await fetch(API_CONFIG.autoJoinNetworkUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(postData),
+            signal: controller.signal
+        });
+
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+            throw new Error(`HTTP错误: ${response.status} ${response.statusText}`);
+        }
+
+        // 解析响应（不关心具体内容， 只检查HTTP状态）
+        const result = await response.json(); 
+        console.log('自动入网请求响应：', result);
+
+        // 更新当前设备信息中的自动入网状态
+        currentDevice.auto_join = autoJoinFlag === 1;
+        currentDevice.aj_flag = autoJoinFlag;
+
+        // 显示成功通知
+        showNotification('自动入网', `自动入网${autoJoinFlag === 1 ? '开启' : '关闭'}`, false);
+
+    } catch (error) {
+        console.error('自动入网请求失败：', error);
+
+        // 根据错误类型显示不同信息
+        let errorMessage = '自动入网设置失败';
+        if (error.name === 'AbortError') {
+            errorMessage = `请求超时 (${API_CONFIG.timeout/1000}秒)`;
+        } else if (error.message.includes('Failed to fetch')) {
+            errorMessage = '网络连接失败， 请检查API服务是否可用';
+        } else {
+            errorMessage = `自动入网设置失败： ${error.message}`;
+        }
+
+        // 恢复勾选框状态
+        autoJoinNetworkEl.checked = !autoJoinNetworkEl.checked;
+
+        // 显示错误通知
+        showNotification('自动入网', errorMessage, true);
+    } finally {
+        autoJoinNetworkEl.disabled = false;
+        autoJoinLoadingEl.classList.add('hidden');
+        autoJoinRequestInProgress = false;
+    }
+}
+
+// 检查更新
+async function checkForUpdates() {
+    if (!elements.checkUpdateButton || !elements.checkUpdateLoading) return;
+    
+    // 显示加载状态
+    elements.checkUpdateButton.disabled = true;
+    elements.checkUpdateLoading.classList.remove('hidden');
+    
+    try {
+        const response = await fetchWithRetry(API_CONFIG.getFirmwareInfoUrl, {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' },
+            timeout: API_CONFIG.timeout
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP错误: ${response.status} ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        
+        if (!result.success) {
+            throw new Error(result.message || '获取固件信息失败');
+        }
+        
+        const firmwareVersions = result.data;
+        //updateVersionInfo();
+        
+        // 显示通知
+        if (firmwareVersions.current !== firmwareVersions.latest) {
+            showNotification('检查更新', `发现新版本 ${firmwareVersions.latest}`, false);
+        } else {
+            showNotification('检查更新', '当前已是最新版本', false);
+        }
+        
+    } catch (error) {
+        console.error('检查更新失败:', error);
+        showNotification('检查更新失败', error.message, true);
+    } finally {
+        // 恢复状态
+        elements.checkUpdateButton.disabled = false;
+        elements.checkUpdateLoading.classList.add('hidden');
+    }
+}
+
+// 确认升级
+function confirmUpgrade() {
+    if (confirm(`确定要升级吗？\n升级过程中设备将暂时无法使用，请勿断电。`)) {
+        performUpgrade();
+    }
+}
+
+// 执行升级
+async function performUpgrade() {
+    if (!elements.upgradeButton || !elements.upgradeLoading) return;
+    
+    // 显示加载状态
+    elements.upgradeButton.disabled = true;
+    elements.uploadButton.disabled = true;
+    elements.upgradeLoading.classList.remove('hidden');
+    
+    try {
+        showNotification('升级中', `正在升级...`, false, 0);
+        
+        // 创建超时控制器
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), API_CONFIG.timeout * 3); // 升级超时时间延长
+        
+        // 发送真实POST请求到升级API
+        const response = await fetch(API_CONFIG.upgradeFirmwareUrl, {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                // 可添加认证头
+                // 'Authorization': `Bearer ${getAuthToken()}`
+            },
+            body: JSON.stringify({
+                deviceId: currentDevice.mac || 'unknown'
+            }),
+            signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
+        
+        // 检查HTTP响应状态
+        if (!response.ok) {
+            throw new Error(`HTTP错误: ${response.status} ${response.statusText}`);
+        }
+        
+        // 解析响应
+        const result = await response.json();
+        
+        // 验证业务逻辑成功
+        if (!result.status) {
+            throw new Error(result.message || '升级失败，服务器返回错误');
+        }
+        
+        // 更新UI
+        updateDeviceDisplay();
+        
+        // 显示成功通知
+        showNotification('升级成功', `设备已成功升级版本\n设备将重启以应用更新`, false);
+        
+    } catch (error) {
+        console.error('升级失败:', error);
+        
+        // 记录失败历史
+        upgradeHistory.unshift({
+            version: firmwareVersions.latest,
+            date: new Date().toISOString().split('T')[0],
+            status: "失败"
+        });
+        initUpgradeHistoryTable();
+        
+        // 详细错误提示
+        let errorMsg = `升级过程中发生错误: ${error.message}`;
+        if (error.name === 'AbortError') {
+            errorMsg = `升级超时（${API_CONFIG.timeout*3/1000}秒），请检查设备连接`;
+        } else if (error.message.includes('Failed to fetch')) {
+            errorMsg = '网络连接失败，请检查API服务是否可用';
+        }
+        
+        showNotification('升级失败', errorMsg, true);
+    } finally {
+        // 恢复状态
+        elements.upgradeButton.disabled = false;
+        elements.uploadButton.disabled = false;
+        elements.upgradeLoading.classList.add('hidden');
+    }
+}
+
+// 上传固件 - 改为真实POST请求实现
+async function uploadFirmware() {
+    const fileInput = elements.firmwareFileInput;
+    if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+        showNotification('上传失败', '请先选择固件文件', true);
+        return;
+    }
+    
+    if (!elements.uploadButton || !elements.uploadLoading) return;
+    
+    // 获取选中的文件
+    const firmwareFile = fileInput.files[0];
+    
+    // 文件验证
+    const allowedTypes = ['application/octet-stream', 'application/zip', 'application/x-zip-compressed'];
+    const maxSizeMB = 30; // 30MB
+    
+    if (!allowedTypes.includes(firmwareFile.type) && !firmwareFile.name.endsWith('.bin')) {
+        showNotification('文件类型错误', '请上传正确的固件文件（.bin或压缩文件）', true);
+        return;
+    }
+    
+    if (firmwareFile.size > maxSizeMB * 1024 * 1024) {
+        showNotification('文件过大', `固件文件不能超过${maxSizeMB}MB`, true);
+        return;
+    }
+    
+    // 显示加载状态和进度条
+    elements.uploadButton.disabled = true;
+    elements.upgradeButton.disabled = true;
+    elements.uploadLoading.classList.remove('hidden');
+    
+    // 显示上传进度条
+    if (elements.uploadProgressContainer && elements.uploadProgressBar) {
+        elements.uploadProgressContainer.classList.remove('hidden');
+        elements.uploadProgressBar.style.width = '0%';
+    }
+    
+    try {
+        // 显示上传中通知
+        showNotification('上传中', `正在上传 ${firmwareFile.name}...`, false, 0);
+        
+        // 创建FormData对象，用于文件上传
+        const formData = new FormData();
+        formData.append('firmware', firmwareFile);
+        // 可以添加其他需要的参数
+        formData.append('deviceId', currentDevice.mac || 'unknown');
+        
+        // 发送真实POST请求
+        const response = await fetch(API_CONFIG.uploadFirmwareUrl, {
+            method: 'POST',
+            body: formData, // 使用FormData而非JSON，适合文件上传
+            // 注意： 上传文件时不要设置Content-Type为application/json，
+            //浏览器会自动设置为 multipart/form-data 并添加边界
+            timeout: API_CONFIG.timeout * 2, // 文件上传超时时间延长一倍
+            //添加进度监听
+            onUploadProgress: (progressEvent) => {
+                if (progressEvent.lengthComputable && progressBar) {
+                    const percentCompleted = Math.round(
+                        (progressEvent.loaded * 100) / progressEvent.total
+                    );
+                    progressBar.style.width = `${percentCompleted}%`;
+                }
+            }
+        });
+        
+        // 解析响应数据
+        const result = await response.json();
+        
+        // 验证响应
+        if (!response.ok) {
+            throw new Error(result.message || `上传失败: ${response.status} ${response.statusText}`);
+        }
+        
+        if (!result.status) {
+            throw new Error(result.message || '服务器拒绝了上传请求');
+        }
+        
+        // 从响应中获取新版本信息
+        const newVersion = result.data?.version || 
+                          extractVersionFromFileName(firmwareFile.name) || 
+                          '自定义版本';
+        
+        
+        // 延迟后隐藏进度条
+        setTimeout(() => {
+        }, 1000);
+        
+        // 显示成功通知
+        showNotification('上传成功', `固件 ${firmwareFile.name} 已上传成功，可以开始升级了`, false);
+        disableUpgradeButton(false);
+        // 清空文件选择
+        fileInput.value = '';
+        if (elements.selectedFileName) {
+            elements.selectedFileName.textContent = '未选择文件';
+            elements.selectedFileName.classList.remove('text-primary');
+            elements.selectedFileName.classList.add('text-gray-5');
+        }
+
+        //隐藏文件信息
+        if (elements.fileInfoContainer) {
+            elements.fileInfoContainer.classList.add('hidden');
+        }
+        
+    } catch (error) {
+        console.error('固件上传失败:', error);
+        
+        // 隐藏进度条
+        if (progressContainer) elements.uploadProgressContainer.classList.add('hidden');
+        
+        // 更详细的错误提示
+        let errorMsg = `上传过程中发生错误: ${error.message}`;
+        if (error.name === 'AbortError') {
+            errorMsg = `上传超时（${API_CONFIG.timeout*2/1000}秒），请检查网络或文件大小`;
+        } else if (error.message.includes('Failed to fetch')) {
+            errorMsg = '网络连接失败，请检查API服务是否可用';
+        }
+        
+        showNotification('上传失败', errorMsg, true);
+    } finally {
+        // 恢复状态
+        elements.uploadButton.disabled = false;
+        elements.upgradeButton.disabled = false;
+        elements.uploadLoading.classList.add('hidden');
+
+    }
+}
+
+// 辅助函数：从文件名提取版本号
+function extractVersionFromFileName(fileName) {
+    const versionMatch = fileName.match(/v\d+\.\d+\.\d+/);
+    return versionMatch ? versionMatch[0] : null;
+}
+
+// 带重试的fetch函数
+async function fetchWithRetry(url, options, retries = 2, delay = 1000) {
+    try {
+        // 创建超时控制器
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), options.timeout || API_CONFIG.timeout);
+        
+        const response = await fetch(url, {
+            ...options,
+            signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
+        return response;
+    } catch (error) {
+        if (retries > 0 && !(error instanceof TypeError) && error.name !== 'AbortError') {
+            // 等待一段时间后重试
+            await new Promise(resolve => setTimeout(resolve, delay));
+            return fetchWithRetry(url, options, retries - 1, delay * 2); // 指数退避
+        }
+        throw error;
+    }
+}
+// 加载设备信息 - 增强网络错误处理
+function initChannelSelect() {
+    const channelSelect = elements.channelSelect;
+    if (!channelSelect) return;
+
+    channelSelect.innerHTML = '';
+
+    // 根据当前带宽确定可用信道
+    const currentBandwidth = parseInt(elements.physicalBandwidthSelect?.value) || 20;
+    let availableChannels = BANDWIDTH_CHANNEL_RULES[currentBandwidth] || BANDWIDTH_CHANNEL_RULES[20];
+
+    availableChannels.forEach(channel => {
+        const option = document.createElement('option');
+        option.value = channel;
+        option.textContent = channel;
+        if (currentDevice.channel && channel.toString() === currentDevice.channel.toString()) {
+            option.selected = true;
+        }
+        channelSelect.appendChild(option);
+    });
+
+    // 如果没有选中任何选项，选择第一个
+    if (!currentDevice.channel && channelSelect.options.length > 0) {
+        channelSelect.value = channelSelect.options[0].value;
+    }
+
+    // 初始化后根据当前信道更新带宽选项
+    setTimeout(() => {
+        updateBandwidthOptionsByChannel();
+    }, 1);
+}
+
+function updateLastRefreshTime() {
+    const now = new Date();
+    const timeString = now.toLocaleDateString('zh-CN', {
+        hour12: false,
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+    });
+
+    // 如果有时间显示元素， 更新它
+    if (elements.lastUpdateTimeEl) {
+        elements.lastUpdateTimeEl.textContent = `最后更新: ${timeString}`;
+    } else {
+        // 如果没有时间显示元素， 在设备信息卡片中添加一个  
+        const deviceInfoCard = document.getElementById('device-info-card');  
+        if (deviceInfoCard && !document.getElementById('auto-refresh-time')) {
+            const timeElement = document.createElement('div');
+            timeElement.id = 'auto-refresh-time';
+            timeElement.className = 'text-xs text-gray-500 mt-2 text-right';
+            timeElement.textContent = `自动刷新: ${timeString}`;
+            deviceInfoCard.appendChild(timeElement);
+        } else if (existingTimeEl) {
+            existingTimeEl.textContent = `自动刷新: ${timeString}`;
+        }
+    }
+}
+
+// 手动扫描
+async function handleManualScan() {
+    const typeEl = document.getElementById('settings-device-type');
+    const deviceType = typeEl.value;  
+    console.log('保存的设备类型:', deviceType);
+
+    // 根据设备类型跳转到不同页面
+    if (deviceType === 'tnode') {
+        // 终端节点 - 跳转到节点扫描页面，添加延迟确保UI更新完成
+        setTimeout(() => {
+            console.log('跳转到节点扫描页面'); // 调试日志
+            switchPage('node-scan');
+        }, 5);
+        showNotification('设置已保存', '请扫描并连接到G节点', false);
+    } else {
+        // 主网关 - 跳转到设备信息页面
+        setTimeout(() => {
+            showNotification('切换页面刷新缓存中', `请稍等...`, false);
+            switchPage('device-display');
+        }, 30);
+        
+        showNotification('操作成功', '设置已保存并应用', false);
+    }
+}
+
+async function fetchDeviceInfo() {
+    // 显示加载状态
+    elements.deviceLoading?.classList.remove('hidden');
+    elements.deviceErrorHint?.classList.add('hidden');
+    elements.deviceInfoCard?.classList.add('hidden');
+    elements.connectedDevicesCard?.classList.add('hidden');
+    elements.signalTrendCard?.classList.add('hidden');
+
+    // 创建超时控制器
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), API_CONFIG.timeout);
+
+    try {
+        // 同时请求两个API，添加超时控制
+        const [basicInfoResponse, connInfoResponse] = await Promise.all([
+            fetch(API_CONFIG.getDevBasicInfoUrl, { 
+                method: 'GET',
+                signal: controller.signal,
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            }),
+            fetch(API_CONFIG.getDevConnInfoUrl, { 
+                method: 'GET',
+                signal: controller.signal,
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            })
+        ]);
+
+        clearTimeout(timeoutId); // 清除超时
+
+        // 检查响应状态
+        if (!basicInfoResponse.ok) {
+            throw new Error(`HTTP错误: ${basicInfoResponse.status}`);
+        }
+        if (!connInfoResponse.ok) {
+            throw new Error(`HTTP错误: ${connInfoResponse.status}`);
+        }
+
+        // 解析响应数据
+        const basicInfo = await basicInfoResponse.json();
+        const connInfo = await connInfoResponse.json();
+
+        // 验证数据有效性
+        if (!basicInfo || !connInfo) {
+            throw new Error('获取的数据不完整');
+        }
+
+        // 合并设备信息
+        currentDevice = { 
+            ...basicInfo.data,
+            ...connInfo.deviceInfo,
+            // 从basicinfo中读取flag值，并转换为布尔值
+            auto_join: basicInfo.data.aj_flag === 1
+        };
+        connectedDevices = connInfo.data || [];
+        
+        // 为每个设备添加历史信号数据
+        connectedDevices.forEach(device => {
+            // 获取当前时间范围
+            const activeTimeBtn = document.querySelector('.time-range-btn.bg-primary');
+            const timeRangeText = activeTimeBtn ? activeTimeBtn.textContent : '6小时';
+            const hours = parseInt(timeRangeText);
+            // 这里可以添加处理逻辑
+        });
+        
+        usingDefaultData = false;
+
+        // 隐藏默认数据指示器
+        elements.deviceInfoDefaultIndicator?.classList.add('hidden');
+        elements.connectedDevicesDefaultIndicator?.classList.add('hidden');
+
+        // 隐藏加载状态，显示内容
+        elements.deviceLoading?.classList.add('hidden');
+        elements.deviceInfoCard?.classList.remove('hidden');
+        elements.connectedDevicesCard?.classList.remove('hidden');
+        elements.signalTrendCard?.classList.remove('hidden');
+
+        // 更新UI显示，确保设备类型同步
+        updateDeviceDisplay();
+        initConnectedDevicesTable();
+        initChannelSelect();
+        populateSettingsForm();
+
+        // 更新自动入网勾选框状态
+        updateAutoJoinCheckbox();
+       
+		//数据更新后更新显示
+		updateAutoJoinVisibility(); 
+        // 显示成功通知
+        showNotification('操作成功', '设备信息已更新', false);
+        updateLastRefreshTime();
+        
+    } catch (error) {
+        console.error('获取设备信息失败:', error);
+        
+        // 清除超时
+        clearTimeout(timeoutId);
+        
+        // 显示错误提示
+        elements.deviceLoading?.classList.add('hidden');
+        elements.deviceErrorHint?.classList.remove('hidden');
+        
+        // 根据错误类型显示不同信息
+        let errorMessage = '无法获取设备信息，已使用默认数据';
+        if (error.name === 'AbortError') {
+            errorMessage = `请求超时（${API_CONFIG.timeout/1000}秒），已使用默认数据`;
+        } else if (error.message.includes('Failed to fetch')) {
+            errorMessage = '网络连接失败，已使用默认数据';
+        }
+        
+        elements.errorHintMessage.textContent = errorMessage;
+        
+        // 显示内容
+        elements.deviceInfoCard?.classList.remove('hidden');
+        elements.connectedDevicesCard?.classList.remove('hidden');
+        elements.signalTrendCard?.classList.remove('hidden');
+        
+        // 显示错误通知
+        showNotification('加载失败', errorMessage, true);
+        updateLastRefreshTime();
+    }
+}
+
+function updateAutoJoinCheckbox() {
+    const autoJoinNetworkEl = document.getElementById('auto-join-network');
+    if (autoJoinNetworkEl) {
+        // 优先使用auto_join,如果没有则使用 aj_flag 字段
+        let autoJoinStatus = false;
+
+        if (currentDevice.auto_join !== undefined) {
+            autoJoinStatus = currentDevice.auto_join;
+        } else if (currentDevice.aj_flag !== undefined) {
+            autoJoinStatus = currentDevice.aj_flag === 1;
+        }
+
+        autoJoinNetworkEl.checked = autoJoinStatus === true;
+        console.log('更新自动入网勾选框状态：', autoJoinNetworkEl.checked);
+    }
+}
+
+// 更新设备显示 - 增强默认值处理，确保设备类型正确显示
+function updateDeviceDisplay() {
+    // 确保设备对象存在
+    if (!currentDevice) currentDevice = { ...defaultDeviceInfo };
+
+    const deviceNameEl = document.getElementById('device-name');
+    const deviceTypeEl = document.getElementById('current-device-type');
+    const deviceIpEl = document.getElementById('device-ip');
+    const deviceChannelEl = document.getElementById('device-channel');
+    const devicePhysicalBandwidthEl = document.getElementById('device-physical-bandwidth');
+    const deviceServiceBandwidthEl = document.getElementById('device-service-bandwidth');
+    const deviceServeripEl = document.getElementById('device-server-ipconfig');
+    const deviceServerportEl = document.getElementById('device-server-portconfig');
+    const deviceVersionEl = document.getElementById('device-version');
+    
+    // 设备名称使用essid的值，确保有默认值
+    if (deviceNameEl) {
+        deviceNameEl.textContent = currentDevice.essid || currentDevice.name || '未知设备';
+    }
+    
+    // 设备类型显示，确保与设置中的类型同步
+    if (deviceTypeEl) {
+        const deviceType = currentDevice.slb_role || currentDevice.sub_role || (currentDevice.type === 0 ? 'gnode' : 'tnode');
+        deviceTypeEl.innerHTML = deviceType === 'gnode' ? 'G节点 (主节点)' : 'T节点 (终端节点)';
+        deviceTypeEl.className = `px-3 py-1 rounded-full text-sm font-medium ${
+            deviceType === 'gnode' ? 'bg-primary/20 text-primary' : 
+            deviceType === 'tnode' ? 'bg-accent/20 text-accent' : 'bg-secondary/20 text-secondary'
+        }`;
+    }
+    
+    // 所有字段都添加默认值保障
+    if (deviceIpEl) deviceIpEl.textContent = currentDevice.ipaddr || currentDevice.ip || '未知IP';
+    if (deviceChannelEl) deviceChannelEl.textContent = currentDevice.channel || '未知信道';
+    if (devicePhysicalBandwidthEl) {
+        devicePhysicalBandwidthEl.textContent = currentDevice.bw 
+        ? `${currentDevice.bw} M` 
+        : '未知带宽';
+    }
+    if (deviceServiceBandwidthEl) {
+        deviceServiceBandwidthEl.textContent = currentDevice.tfc_bw 
+        ? `${currentDevice.tfc_bw} M` 
+        : '未知带宽';
+    }
+
+    if (deviceServeripEl) {
+        deviceServeripEl.textContent = currentDevice.net_manage_ip;
+    }
+    if (deviceServerportEl) {
+        deviceServerportEl.textContent = currentDevice.log_port;
+    }
+    if (deviceVersionEl) {
+        deviceVersionEl.textContent = currentDevice.version || '未知版本';
+    }
+
+    updateManualScanButtonState();
+}
+
+function updateManualScanButtonState() {
+    const manualScanButton = elements.manualScan;
+    if (!manualScanButton) return;
+
+    const deviceType = currentDevice.slb_role || currentDevice.sub_role || (currentDevice.type === 0 ? 'gnode' : 'tnode');
+    if (deviceType === 'tnode') {
+        manualScanButton.classList.remove('hidden', 'opacity-50', 'cursor-not-allowed');
+        manualScanButton.disabled = false;
+        manualScanButton.title = '扫描并连接到G节点';
+    } else {
+        manualScanButton.classList.add('opacity-50', 'cursor-not-allowed');
+        manualScanButton.disabled = true;
+        manualScanButton.title = 'G节点无需扫描连接';
+
+        manualScanButton.classList.add('hidden');
+    }
+}
+
+// 填充设置表单数据 - 确保设备类型从currentDevice正确获取
+function populateSettingsForm() {
+    const typeEl = document.getElementById('settings-device-type');
+    const nameEl = document.getElementById('settings-name');
+    const ipEl = document.getElementById('settings-ip');
+    const channelEl = document.getElementById('settings-channel');
+    const physicalBandwidthEl = document.getElementById('settings-physical-bandwidth');
+    const serviceBandwidthEl = document.getElementById('settings-service-bandwidth');
+    const serveripEl = document.getElementById('setting-server-ip');
+    const serverportEl = document.getElementById('setting-server-port');
+    const versionEl = document.getElementById('settings-version');
+    
+    // 使用当前设备数据或默认值，确保属性名一致
+    if (typeEl) {
+        // 确保设备类型正确设置，默认为gnode
+        typeEl.value = currentDevice.slb_role || currentDevice.sub_role || (currentDevice.type === 0 ? 'gnode' : 'tnode');
+    }
+    if (nameEl) nameEl.value = currentDevice.essid || currentDevice.name;
+    if (ipEl) ipEl.value = currentDevice.ipaddr || currentDevice.ip;
+    if (channelEl) channelEl.value = currentDevice.channel;
+    if (physicalBandwidthEl) physicalBandwidthEl.value = currentDevice.bw;
+    if (serviceBandwidthEl) serviceBandwidthEl.value = currentDevice.tfc_bw;
+    if (serveripEl) serveripEl.value = currentDevice.net_manage_ip;
+    if (serverportEl) serverportEl.value = currentDevice.log_port;
+    if (versionEl) versionEl.value = currentDevice.version;
+
+    updateManualScanButtonState();
+    
+    // 注意： 带宽值现在由updateBandwidthOptionsByChannel函数处理
+    // 延迟设置带宽值， 确保选项已更新
+    setTimeout(() => {
+        // 先设置物理带宽
+        if (physicalBandwidthEl && currentDevice.bw) {
+            physicalBandwidthEl.value = currentDevice.bw;
+        }
+
+        // 根据带宽更新信道选项
+        updateChannelOptionsByBandwidth();
+        
+        // 设置信道(注意: updateChannelOptionsByBandwidth会根据带宽过滤信道)
+        if (channelEl && currentDevice.channel) {
+            // 检查当前信道是否在当前带宽下可用
+            const currentBandwidth = parseInt(physicalBandwidthEl?.value) || 20;
+            const availableChannels = BANDWIDTH_CHANNEL_RULES[currentBandwidth] || BANDWIDTH_CHANNEL_RULES[20];
+            if (availableChannels.includes(parseInt(currentDevice.channel))) {
+                channelEl.value = currentDevice.channel;
+            } else if (availableChannels.length > 0) {
+                // 如果不在可用信道中， 选择第一个可用信道
+                channelEl.value = availableChannels[0];
+            }
+        }
+        
+        // 根据信道更新物理带宽选项
+        updateBandwidthOptionsByChannel();
+
+        // 设置业务带宽
+        if (serviceBandwidthEl && currentDevice.tfc_bw) {
+            serviceBandwidthEl.value = currentDevice.tfc_bw;
+        }
+
+        // 重新验证带宽设置
+        validateBandwidthSettings();
+    }, 0);
+}
+
+// 初始化连接设备表格
+function initConnectedDevicesTable() {
+    if (!elements.connectedDevicesTable) return;
+    
+    elements.connectedDevicesTable.innerHTML = '';
+    
+    // 确保有设备列表数据
+    const devicesToShow = connectedDevices.length > 0 ? connectedDevices : null;
+    
+    if (devicesToShow === null || devicesToShow.length === 0) {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td colspan="6" class="py-6 px-4 text-center text-gray-500">
+                <i class="fa fa-info-circle mr-2"></i>
+                没有连接的设备
+            </td>
+        `;
+        elements.connectedDevicesTable.appendChild(row);
+        return;
+    }
+    
+    devicesToShow.forEach(device => {
+        const row = document.createElement('tr');
+        row.className = 'border-b border-dark-lighter hover:bg-dark-lighter/50 transition-colors';
+        
+        // 信号强度样式
+        let rssiClass;
+        if (device.rssi > -70) {
+            rssiClass = 'text-green-400'; // 强信号
+        } else if (device.rssi > -80) {
+            rssiClass = 'text-yellow-400'; // 中等信号
+        } else {
+            rssiClass = 'text-red-400'; // 弱信号
+        }
+        
+        row.innerHTML = `
+            <td class="py-3 px-4">${device.name || '未知设备'}</td>
+            <td class="py-3 px-4">
+                <span class="px-2 py-1 rounded-full text-xs font-medium ${device.type === 0 ? 'bg-primary/20 text-primary' : 'bg-secondary/20 text-secondary'}">
+                    ${device.type === 0 ? 'G节点' : device.type === 1 ? 'T节点' : '未知'}
+                </span>
+            </td>
+			<td class="py-3 px-4 font-mono text-sm">${device.ip || 'N/A'}</td>
+            <td class="py-3 px-4 font-mono text-sm">${device.mac || 'N/A'}</td>
+            <td class="py-3 px-4">
+                <span class="${rssiClass} font-medium">${device.rssi || 'N/A'} dBm</span>
+            </td>
+            <td class="py-3 px-4">${device.version || 'N/A'}</td>
+            <td class="py-3 px-4">${device.tfc_bw || 'N/A'}</td>
+        `;
+        
+        elements.connectedDevicesTable.appendChild(row);
+    });
+}
+
+// 验证带宽设置
+function validateBandwidthSettings() {
+    const physical = parseInt(elements.physicalBandwidthSelect?.value || '0');
+    const service = parseInt(elements.serviceBandwidthSelect?.value || '0');
+    const bandwidthWarning = document.getElementById('bandwidth-warning');
+    
+    if (!bandwidthWarning) {
+        return true;
+    }
+    
+    if (service > physical) {
+        bandwidthWarning.classList.remove('hidden');
+        return false;
+    }
+    // 验证业务带宽是否是有效值（20， 40， 80）
+    const validServiceBandwidths = [20, 40, 80];
+    if (!validServiceBandwidths.includes(service)) {
+        bandwidthWarning.textContent = '业务带宽必须是20M、40M或80M';
+        bandwidthWarning.classList.remove('hidden');
+        return false;
+    }
+
+    bandwidthWarning.classList.add('hidden');
+    return true;
+}
+
+// 启动自动刷新
+function startAutoRefresh() {
+    // 检查开关状态
+    if (!isAutoRefreshEnabled) {
+        console.log('自动刷新开关未开启，不启动自动刷新');
+        return;
+    }
+
+    // 检查是否在device-display页面
+    const deviceDisplaySection = document.getElementById('device-display');
+    if (!deviceDisplaySection || deviceDisplaySection.classList.contains('hidden')) {
+        console.log('不在device-display页面，不启动自动刷新');
+        return;
+    }
+
+    // 清除可能存在的旧定时器
+    if (refreshTimer) {
+        clearInterval(refreshTimer);
+        refreshTimer = null;
+    }
+
+    console.log('启动设备信息自动刷新，每5秒刷新一次');
+
+    // 立即执行一次刷新
+    fetchDeviceInfo();
+
+    // 每5秒刷新一次
+    refreshTimer = setInterval(() => {
+        // 再次检查开关状态和页面状态
+        if (!isAutoRefreshEnabled) {
+            console.log('自动刷新已关闭，停止刷新');
+            stopAutoRefresh();
+            return;
+        }
+        
+        const currentDeviceDisplay = document.getElementById('device-display');
+        if (currentDeviceDisplay && !currentDeviceDisplay.classList.contains('hidden')) {
+            console.log('执行定时设备信息刷新');
+            fetchDeviceInfo();
+        } else {
+            console.log('已离开device-display页面，停止自动刷新');
+            stopAutoRefresh();
+        }
+    }, 5000);
+}
+
+// 停止自动刷新
+function stopAutoRefresh() {
+    if (refreshTimer) {
+        console.log('停止设备信息自动刷新');
+        clearInterval(refreshTimer);
+        refreshTimer = null;
+    }
+}  
+
+window.addEventListener('beforeunload', function() {
+    stopAutoRefresh();
+});
+
+// 页面切换
+function switchPage(pageId) {
+    // 确保节点扫描页面元素存在
+    const nodeScanSection = document.getElementById('node-scan');
+    if (nodeScanSection) {
+        // 移除hidden类以确保页面可以显示
+        nodeScanSection.classList.remove('hidden');
+    }
+    
+    // 切换页面显示
+    elements.pageSections?.forEach(section => section.classList.add('hidden'));
+    const targetSection = document.getElementById(pageId);
+    if (targetSection) {
+        targetSection.classList.remove('hidden');
+    }
+    
+    // 关闭移动菜单
+    elements.mobileMenu?.classList.add('hidden');
+
+    // 停止之前的自动刷新
+    stopAutoRefresh();
+    
+    if (pageId === 'device-display' && isAutoRefreshEnabled) {
+        // 延迟启动，确保页面切换完成
+        setTimeout(() => {
+            startAutoRefresh();
+        }, 500);
+    } else if (pageId === 'device-display') {
+        // 立即执行一次刷新
+        setTimeout(() => {
+            fetchDeviceInfo();
+        }, 500);
+    }
+
+    // 如果切换到扫描页面，自动执行扫描
+    if (pageId === 'node-scan') {
+        scanGNodes();
+        startBssPolling();
+    } else {
+        stopBssPolling();
+    }
+}
+
+// 保存设置 - 确保设备类型正确更新并同步
+async function handleSaveSettings() {
+    // 验证带宽设置
+    if (!validateBandwidthSettings()) {
+        showNotification('操作失败', '业务带宽不能大于物理带宽', true);
+        return;
+    }
+    
+    // 获取表单数据
+    const typeEl = document.getElementById('settings-device-type');
+    const nameEl = document.getElementById('settings-name');
+    const ipEl = document.getElementById('settings-ip');
+    const channelEl = document.getElementById('settings-channel');
+    const physicalBandwidthEl = document.getElementById('settings-physical-bandwidth');
+    const serviceBandwidthEl = document.getElementById('settings-service-bandwidth');
+    const serveripEl = document.getElementById('setting-server-ip');
+    const serverportEl = document.getElementById('setting-server-port');
+    
+    // 验证所有必填字段
+    if (!nameEl.value || !ipEl.value) {
+        showNotification('操作失败', '请填写必填字段', true);
+        return;
+    }
+    
+    // 获取设备类型 - 确保正确获取T节点类型
+    const deviceType = typeEl.value;
+    
+    console.log('保存的设备类型:', deviceType); // 调试日志
+
+    // 验证信道与带宽的一致性
+    const selectedChannel = parseInt(channelEl.value);
+    const selectedBandwidth = parseInt(physicalBandwidthEl.value);
+
+    // 检查信道是否支持当前带宽
+    const channelSupportedBandwidths = getChannelSupportedBandwidths(selectedChannel);
+    if (!channelSupportedBandwidths.includes(selectedBandwidth)) {
+        showNotification('操作失败', `信道${selectedChannel}不支持${selectedBandwidth}M带宽`, true);
+        return;
+    }
+
+    // 验证业务带宽是否为有效值
+    const serviceBandwidth = parseInt(serviceBandwidthEl.value);
+    const validServiceBandwidths = [20, 40, 80];
+    if (!validServiceBandwidths.includes(serviceBandwidth)) {
+        showNotification('操作失败', '业务带宽必须是20M、40M或80M', true);
+        return;
+    }
+    
+    // 显示加载状态
+    if (elements.settingsSubmit && elements.submitLoading) {
+        elements.settingsSubmit.disabled = true;
+        elements.submitLoading.classList.remove('hidden');
+    }
+    try {
+        // 准备发送的数据 - 使用与设备显示一致的属性名
+        const postData = {
+            type: deviceType === 'tnode' ? 1 : 0,  // 与设备类型属性名一致
+            name: nameEl.value,   // 与设备名称属性名一致
+            ip: ipEl.value,    // 与IP地址属性名一致
+            channel: parseInt(channelEl.value),
+            bw: parseInt(physicalBandwidthEl.value),
+            tfc_bw: parseInt(serviceBandwidthEl.value),  // 与业务带宽属性名一致
+            net_manage_ip: serveripEl.value,
+            log_port: parseInt(serverportEl.value)
+        };
+        
+        console.log('提交设置数据:', postData);
+        
+        // 发送设置到API
+        const response = await fetch(API_CONFIG.setNodeUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(postData),
+            timeout: API_CONFIG.timeout
+        });
+        
+        if (!response.ok) {
+            throw new Error(`保存失败: ${response.status} ${response.statusText}`);
+        }
+        
+        // 更新当前设备信息 - 关键：确保设备类型正确更新
+        currentDevice = {
+            ...currentDevice,
+            type: deviceType === 'tnode' ? 1 : 0,  // 同步设备类型到currentDevice
+            essid: nameEl.value,
+            ip: ipEl.value,
+            channel: parseInt(channelEl.value),
+            bw: parseInt(physicalBandwidthEl.value),
+            tfc_bw: parseInt(serviceBandwidthEl.value),
+            net_manage_ip: serveripEl.value,
+            log_port: parseInt(serverportEl.value)
+        };
+        
+        // 强制更新UI显示，确保设备类型同步显示
+        updateDeviceDisplay();
+        populateSettingsForm();
+        
+        // 确保节点扫描页面元素存在
+	/*
+        const nodeScanSection = document.getElementById('node-scan');
+        if (!nodeScanSection) {
+            throw new Error('节点扫描页面不存在');
+        }
+        */
+        // 根据设备类型跳转到不同页面
+	/*
+        if (deviceType === 'tnode') {
+            // 终端节点 - 跳转到节点扫描页面，添加延迟确保UI更新完成
+            setTimeout(() => {
+                console.log('跳转到节点扫描页面'); // 调试日志
+                switchPage('node-scan');
+            }, 500);
+            showNotification('设置已保存', '请扫描并连接到G节点', false);
+        } else {
+	*/	
+            // 主网关 - 跳转到设备信息页面
+            setTimeout(() => {
+                showNotification('保存配置中', `请稍等...`, false);
+                switchPage('device-display');
+            }, 3000);
+            showNotification('操作成功', '设置已保存并应用', false);
+        //}
+        
+    } catch (error) {
+        console.error('保存设置失败:', error);
+        showNotification('操作失败', `保存设置时发生错误: ${error.message}`, true);
+    } finally {
+        // 隐藏加载状态
+        if (elements.settingsSubmit && elements.submitLoading) {
+            elements.settingsSubmit.disabled = false;
+            elements.submitLoading.classList.add('hidden');
+        }
+    }
+}
+
+// 获取信道支持的带宽
+function getChannelSupportedBandwidths(channel) {
+    // 检查是否有特定的信道规则
+    for (const [channelsStr, bandwidths] of Object.entries(CHANNEL_BANDWIDTH_RULES)) {
+        if (channelsStr === 'default') continue;
+
+        const channels = channelsStr.split(',').map(ch => parseInt(ch));
+        if (channels.includes(channel)) {
+            return bandwidths;
+        }
+    }
+
+    // 默认规则
+    return CHANNEL_BANDWIDTH_RULES.default;
+}
+
+//扫描附近的G节点
+// 扫描附近的G节点 - 修改为HTTP GET请求
+async function scanGNodes(silent = false) {
+    if (!elements.scanGnodesButton || !elements.scanLoading || !elements.gNodesTable) return;
+    
+    // 显示加载状态
+    elements.scanGnodesButton.disabled = true;
+    elements.scanLoading.classList.remove('hidden');
+    elements.gNodesTable.innerHTML = '';
+    elements.scanResultHint?.classList.add('hidden');
+    
+    // 创建超时控制器
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), API_CONFIG.timeout);
+    
+    try {
+        // 发送HTTP GET请求到API端点
+        const response = await fetch(API_CONFIG.scanGNodesUrl, {
+            method: 'GET',  // 修改为GET请求
+            headers: { 
+                'Content-Type': 'application/json',
+                // 可以添加认证头，如果需要的话
+                // 'Authorization': 'Bearer ' + getAuthToken()
+            },
+            // GET请求没有请求体
+            signal: controller.signal,
+            timeout: API_CONFIG.timeout
+        });
+        
+        // 清除超时
+        clearTimeout(timeoutId);
+        
+        // 检查响应状态
+        if (!response.ok) {
+            throw new Error(`扫描失败: ${response.status} ${response.statusText}`);
+        }
+        
+        // 解析响应数据
+        const result = await response.json();
+        
+        // 验证响应数据结构
+        if (!result || !Array.isArray(result.data)) {
+            throw new Error('扫描结果格式不正确');
+        }
+        
+        // 保存扫描结果
+        scanResults = result.data;
+        
+        // 应用当前过滤器
+        filterScanResults();
+        
+        // 更新结果计数
+        if (elements.scanResultsCount) {
+            elements.scanResultsCount.textContent = scanResults.length;
+        }
+        
+        // 非静默模式下显示通知
+        if (!silent) {
+            showNotification('扫描完成', `发现 ${scanResults.length} 个可用G节点`, false);
+        }
+        
+    } catch (error) {
+        console.error('扫描G节点失败:', error);
+        
+        // 清除超时
+        clearTimeout(timeoutId);
+        
+        // 显示错误信息
+        elements.gNodesTable.innerHTML = `
+            <tr>
+                <td colspan="8" class="py-6 px-4 text-center text-red-500">
+                    <i class="fa fa-exclamation-circle mr-2"></i>
+                    ${error.name === 'AbortError' 
+                        ? `扫描超时（${API_CONFIG.timeout/1000}秒）` 
+                        : error.message.includes('Failed to fetch')
+                            ? '网络连接失败，无法扫描'
+                            : `扫描失败: ${error.message}`
+                    }
+                </td>
+            </tr>
+        `;
+        
+        // 非静默模式下显示通知
+        if (!silent) {
+            showNotification('扫描失败', error.message, true);
+        }
+    } finally {
+        // 隐藏加载状态
+        elements.scanGnodesButton.disabled = false;
+        elements.scanLoading.classList.add('hidden');
+    }
+}
+
+// 过滤扫描结果
+function filterScanResults() {
+    if (!elements.gNodesTable) return;
+    
+    let filteredResults = [...scanResults];
+    
+    // 应用过滤条件
+    if (activeScanFilter === 'strong') {
+        // 强信号 (-70 dBm 以上)
+        filteredResults = filteredResults.filter(node => node.rssi > -70);
+    } else if (activeScanFilter === 'medium') {
+        // 中等信号 (-70 到 -85 dBm)
+        filteredResults = filteredResults.filter(node => node.rssi <= -70 && node.rssi > -85);
+    } else if (activeScanFilter === 'weak') {
+        // 弱信号 (-85 dBm 及以下)
+        filteredResults = filteredResults.filter(node => node.rssi <= -85);
+    }
+    // 'all' 则不过滤
+    
+    // 更新表格显示
+    if (filteredResults.length === 0) {
+        elements.gNodesTable.innerHTML = `
+            <tr>
+                <td colspan="7" class="py-6 px-4 text-center text-gray-500">
+                    <i class="fa fa-info-circle mr-2"></i>
+                    没有符合条件的G节点
+                </td>
+            </tr>
+        `;
+        return;
+    }
+    
+    elements.gNodesTable.innerHTML = '';
+    
+    filteredResults.forEach(node => {
+        const row = document.createElement('tr');
+        row.className = 'border-b border-dark-lighter hover:bg-dark-lighter/50 transition-colors';
+        
+        // 信号强度样式
+        let rssiClass, rssiIcon;
+        if (node.rssi > -70) {
+            rssiClass = 'text-green-400'; // 强信号
+            rssiIcon = 'fa-signal';
+        } else if (node.rssi > -85) {
+            rssiClass = 'text-yellow-400'; // 中等信号
+            rssiIcon = 'fa-signal';
+        } else {
+            rssiClass = 'text-red-400'; // 弱信号
+            rssiIcon = 'fa-wifi';
+        }
+        
+        // 状态样式
+        let statusClass = 'px-2 py-1 rounded-full text-xs font-medium ';
+        if (node.status === '在线') {
+            statusClass += 'bg-green-500/20 text-green-400';
+        } else if (node.status === '离线') {
+            statusClass += 'bg-gray-500/20 text-gray-400';
+        } else {
+            statusClass += 'bg-yellow-500/20 text-yellow-400';
+        }
+        
+        row.innerHTML = `
+			<td class="py-3 px-4">${node.index}</td>
+            <td class="py-3 px-4">${node.name || '未知设备'}</td>
+            <td class="py-3 px-4">${node.channel || '未知信道'}</td>
+            <td class="py-3 px-4">
+                <i class="fa ${rssiIcon} mr-1"></i>
+                <span class="${rssiClass} font-medium">${node.rssi || 'N/A'} dBm</span>
+            </td>
+            <td class="py-3 px-4">
+                <button onclick="connectToGNode('${node.mac}','${node.index}','${node.name || '未知设备'}')" 
+                        class="px-3 py-1 bg-primary hover:bg-primary/90 text-white text-sm rounded-lg transition-colors">
+                    <i class="fa fa-link mr-1"></i>连接
+                </button>
+            </td>
+        `;
+        
+        elements.gNodesTable.appendChild(row);
+    });
+}
+
+
+// 连接到G节点
+// 连接到G节点 - 已更新为真实请求
+async function connectToGNode(mac, idx, name) {
+    if (!confirm(`确定要连接到G节点 "${name}" 吗？`)) {
+        return;
+    }
+    
+    // 显示加载状态
+    elements.scanGnodesButton.disabled = true;
+    elements.scanLoading.classList.remove('hidden');
+    
+    try {
+        // 发送真实POST请求到connectGNodeUrl，传入id参数
+        const response = await fetch(API_CONFIG.connectGNodeUrl, {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                // 可根据需要添加认证头
+                // 'Authorization': `Bearer ${getAuthToken()}`
+            },
+            body: JSON.stringify({ 
+                index: idx  // 按照要求传入id参数，使用mac作为标识符
+            }),
+            timeout: API_CONFIG.timeout
+        });
+        
+        // 检查HTTP响应状态
+        if (!response.ok) {
+            throw new Error(`HTTP错误: ${response.status} ${response.statusText}`);
+        }
+        
+        // 解析响应数据
+        const result = await response.json();
+        
+        // 验证业务逻辑成功
+        if (!result.status) {
+            throw new Error(result.message || '连接失败，服务器返回错误');
+        }
+        
+        // 保存连接信息
+        currentDevice.connectedGnode = name;
+        currentDevice.connectedGnodeId = mac;
+        
+        // 刷新设备信息
+        await fetchDeviceInfo();
+
+        // 切换到设备信息页面
+        setTimeout(() => {
+            switchPage('device-display');
+        }, 30);
+        
+        showNotification('连接成功切换页面缓存中', `已成功连接到G节点 "${name}"`, false);
+        
+    } catch (error) {
+        console.error('连接G节点失败:', error);
+        // 根据错误类型提供更具体的提示
+        let errorMsg = `无法连接到G节点: ${error.message}`;
+        if (error.name === 'AbortError') {
+            errorMsg = `连接超时（${API_CONFIG.timeout/1000}秒），请检查网络`;
+        } else if (error.message.includes('Failed to fetch')) {
+            errorMsg = '网络连接失败，请检查API服务是否可用';
+        }
+        showNotification('连接失败', errorMsg, true);
+    } finally {
+        // 隐藏加载状态
+        elements.scanGnodesButton.disabled = false;
+        elements.scanLoading.classList.add('hidden');
+    }
+}
+
+
+// 显示通知
+function showNotification(title, message, isError = false) {
+    const notification = document.getElementById('notification');
+    const titleEl = document.getElementById('notification-title');
+    const messageEl = document.getElementById('notification-message');
+    const iconEl = document.querySelector('#notification-icon i');
+    
+    if (!notification || !titleEl || !messageEl || !iconEl) return;
+    
+    // 设置通知内容
+    titleEl.textContent = title;
+    messageEl.textContent = message;
+    
+    // 设置通知样式
+    if (isError) {
+        notification.classList.remove('border-primary/50');
+        notification.classList.add('border-red-500/50');
+        iconEl.className = 'fa fa-times-circle text-red-500 text-xl';
+    } else {
+        notification.classList.remove('border-red-500/50');
+        notification.classList.add('border-primary/50');
+        iconEl.className = 'fa fa-check-circle text-green-500 text-xl';
+    }
+    
+    // 显示通知
+    notification.classList.remove('translate-x-full');
+    
+    // 3秒后自动关闭
+    setTimeout(() => {
+        notification.classList.add('translate-x-full');
+    }, 3000);
+}

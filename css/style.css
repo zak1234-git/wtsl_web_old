@@ -1,0 +1,187 @@
+/* Tailwind配置 */
+@layer utilities {
+    .content-auto {
+        content-visibility: auto;
+    }
+    .text-shadow {
+        text-shadow: 0 0 8px rgba(22, 93, 255, 0.6);
+    }
+    .glow {
+        box-shadow: 0 0 15px var(--glow-color);
+    }
+    .transition-theme {
+        transition: all 0.3s ease;
+    }
+    .bg-grid {
+        background-image: 
+            linear-gradient(var(--grid-color) 1px, transparent 1px),
+            linear-gradient(90deg, var(--grid-color) 1px, transparent 1px);
+        background-size: 20px 20px;
+    }
+    .loader {
+        border-top-color: var(--primary-color);
+        animation: spinner 1s linear infinite;
+    }
+    @keyframes spinner {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+    .default-indicator {
+        position: relative;
+    }
+    .default-indicator::after {
+        content: attr(data-i18n-default);
+        position: absolute;
+        top: -8px;
+        right: -8px;
+        background: rgba(251, 191, 36, 0.9);
+        color: #111827;
+        text-transform: uppercase;
+        font-size: 9px;
+        padding: 1px 4px;
+        border-radius: 3px;
+        font-weight: bold;
+    }
+}
+
+.btn-disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
+.btn-hidden {
+    display: none;
+}
+
+/* 自动刷新开关样式 - 适配主题 */
+.auto-refresh-switch {
+    position: relative;
+    display: inline-block;
+    width: 44px;
+    height: 24px;
+}
+
+.auto-refresh-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.auto-refresh-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: var(--dark-lighter-color, #1F2937);
+    transition: .4s;
+    border-radius: 24px;
+    border: 1px solid var(--dark-lightest-color, #374151);
+}
+
+.auto-refresh-slider:before {
+    position: absolute;
+    content: "";
+    height: 18px;
+    width: 18px;
+    left: 2px;
+    bottom: 2px;
+    background-color: var(--text-color, #E5E7EB);
+    transition: .4s;
+    border-radius: 50%;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+input:checked + .auto-refresh-slider {
+    background-color: var(--primary-color, #165DFF);
+    border-color: var(--primary-color, #165DFF);
+}
+
+input:checked + .auto-refresh-slider:before {
+    transform: translateX(20px);
+    background-color: white;
+}
+
+
+/* 主题变量定义 */
+:root {
+    --primary-color: #165DFF;
+    --secondary-color: #722ED1;
+    --accent-color: #F97316;
+    --success-color: #10B981;
+    --warning-color: #F59E0B;
+    --danger-color: #EF4444;
+    --dark-color: #111827;
+    --dark-light-color: #1F2937;
+    --dark-lighter-color: #374151;
+    --text-color: #E5E7EB;
+    --text-muted-color: #9CA3AF;
+}
+
+/* 暗色主题 */
+[data-theme="dark"] {
+    --primary-color: #165DFF;
+    --secondary-color: #722ED1;
+    --accent-color: #F97316;
+    --dark-color: #111827;
+    --dark-light-color: #1F2937;
+    --dark-lighter-color: #374151;
+    --text-color: #E5E7EB;
+}
+
+/* 亮色主题 */
+[data-theme="light"] {
+    --primary-color: #165DFF;
+    --secondary-color: #722ED1;
+    --accent-color: #F97316;
+    --dark-color: #F9FAFB;
+    --dark-light-color: #F3F4F6;
+    --dark-lighter-color: #E5E7EB;
+    --text-color: #111827;
+}
+
+/* 基础样式 */
+html {
+    scroll-behavior: smooth;
+}
+
+body {
+    transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Tailwind配置 */
+tailwind.config = {
+    theme: {
+        extend: {
+            colors: {
+                primary: 'var(--primary-color)',
+                secondary: 'var(--secondary-color)',
+                accent: 'var(--accent-color)',
+                dark: 'var(--dark-color)',
+                'dark-light': 'var(--dark-light-color)',
+                'dark-lighter': 'var(--dark-lighter-color)',
+            },
+            fontFamily: {
+                sans: ['Inter', 'system-ui', 'sans-serif'],
+            },
+            animation: {
+                'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                'fade-in': 'fadeIn 0.5s ease-in-out',
+                'slide-in': 'slideIn 0.3s ease-out',
+                'spin-slow': 'spin 3s linear infinite',
+            },
+            keyframes: {
+                fadeIn: {
+                    '0%': { opacity: '0' },
+                    '100%': { opacity: '1' },
+                },
+                slideIn: {
+                    '0%': { transform: 'translateY(-10px)', opacity: '0' },
+                    '100%': { transform: 'translateY(0)', opacity: '1' },
+                }
+            }
+        },
+    }
+}
