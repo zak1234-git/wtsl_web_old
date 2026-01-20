@@ -412,10 +412,18 @@
                         </div>
                     </div>
 
+                    <div class="flex justify-end mb-6">
+                        <button type="button" id="settings-basic-submit" class="bg-primary hover:bg-primary/80 text-white px-6 py-2 rounded-lg transition-colors flex items-center">
+                            <span>保存基础参数</span>
+                            <span id="basic-submit-loading" class="hidden ml-2">
+                                <div class="loader inline-block w-4 h-4 border-2 border-white rounded-full"></div>
+                            </span>
+                        </button>
+                    </div>
+
                     <div class="border-t border-dark-lightest pt-4">
                         <div class="flex items-center justify-between mb-3">
                             <h3 class="text-lg font-semibold text-white">高级参数</h3>
-                            <p class="text-xs text-gray-400">依据提纲增加的六个可编辑参数</p>
                         </div>
                         <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
                             <div>
@@ -468,16 +476,42 @@
                             </div>
                         </div>
                     </div>
-
-                    <div class="flex justify-end">
-                        <button type="button" id="settings-submit" class="bg-primary hover:bg-primary/80 text-white px-6 py-2 rounded-lg transition-colors flex items-center">
-                            <span>保存设置</span>
-                            <span id="submit-loading" class="hidden ml-2">
+                    <div class="flex justify-end mt-6">
+                        <button type="button" id="settings-advanced-submit" class="bg-primary hover:bg-primary/80 text-white px-6 py-2 rounded-lg transition-colors flex items-center">
+                            <span>保存高级参数</span>
+                            <span id="advanced-submit-loading" class="hidden ml-2">
                                 <div class="loader inline-block w-4 h-4 border-2 border-white rounded-full"></div>
                             </span>
                         </button>
                     </div>
                 </form>
+                <div class="mt-10 bg-dark rounded-xl p-6 space-y-4">
+                    <h3 class="text-lg font-semibold text-white">场景测试</h3>
+
+                    <div class="flex flex-col lg:flex-row lg:items-center lg:space-x-4 space-y-3 lg:space-y-0">
+                        <button type="button" id="throughput-test-btn" class="bg-primary hover:bg-primary/80 text-white px-5 py-2 rounded-lg transition-colors flex items-center w-full lg:w-auto justify-center">
+                            <i class="fa fa-tachometer mr-2"></i>吞吐量峰值测试
+                        </button>
+                        <div class="flex-1 grid grid-cols-1 md:grid-cols-2 gap-3 w-full">
+                            <div>
+                                <label class="block text-sm text-gray-300 mb-1">上行流量 (Mbps)</label>
+                                <input id="throughput-up" type="text" readonly class="w-full bg-dark-lighter border border-dark-lightest rounded-lg px-4 py-2 text-white" placeholder="--" />
+                            </div>
+                            <div>
+                                <label class="block text-sm text-gray-300 mb-1">下行流量 (Mbps)</label>
+                                <input id="throughput-down" type="text" readonly class="w-full bg-dark-lighter border border-dark-lightest rounded-lg px-4 py-2 text-white" placeholder="--" />
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="flex flex-wrap gap-3">
+                        <button type="button" id="near-test-btn" class="bg-primary hover:bg-primary/80 text-white px-4 py-2 rounded-lg transition-colors">近距测试</button>
+                        <button type="button" id="mid-test-btn" class="bg-primary hover:bg-primary/80 text-white px-4 py-2 rounded-lg transition-colors">中距测试</button>
+                        <button type="button" id="far-test-btn" class="bg-primary hover:bg-primary/80 text-white px-4 py-2 rounded-lg transition-colors">远距测试</button>
+                        <button type="button" id="low-power-test-btn" class="bg-primary hover:bg-primary/80 text-white px-4 py-2 rounded-lg transition-colors">低功耗测试</button>
+                        <button type="button" id="high-power-test-btn" class="bg-primary hover:bg-primary/80 text-white px-4 py-2 rounded-lg transition-colors">高功耗测试</button>
+                    </div>
+                </div>
             </div>
         </section>
 

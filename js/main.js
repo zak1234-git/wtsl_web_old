@@ -101,8 +101,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                 bandwidthWarning: document.getElementById('bandwidth-warning'),
                 channelSelect: document.getElementById('settings-channel'),
                 deviceTypeSelect: document.getElementById('settings-device-type'),
-                settingsSubmit: document.getElementById('settings-submit'),
-                submitLoading: document.getElementById('submit-loading'),
+                settingsBasicSubmit: document.getElementById('settings-basic-submit'),
+                basicSubmitLoading: document.getElementById('basic-submit-loading'),
+                settingsAdvancedSubmit: document.getElementById('settings-advanced-submit'),
+                advancedSubmitLoading: document.getElementById('advanced-submit-loading'),
 
                 // 通知元素
                 notification: document.getElementById('notification'),
@@ -153,6 +155,16 @@ document.addEventListener('DOMContentLoaded', async () => {
                 autoJoinNetwork: document.getElementById('auto-join-network'),
                 autoJoinLoading: document.getElementById('auto-join-loading'),
                 autoJoinGroup: document.getElementById('auto-join-group'),
+
+                // 场景测试元素
+                throughputTestBtn: document.getElementById('throughput-test-btn'),
+                throughputUp: document.getElementById('throughput-up'),
+                throughputDown: document.getElementById('throughput-down'),
+                nearTestBtn: document.getElementById('near-test-btn'),
+                midTestBtn: document.getElementById('mid-test-btn'),
+                farTestBtn: document.getElementById('far-test-btn'),
+                lowPowerTestBtn: document.getElementById('low-power-test-btn'),
+                highPowerTestBtn: document.getElementById('high-power-test-btn'),
 
                 // 高级参数表单元素
                 cpTypeSelect: document.getElementById('settings-cp-type'),
@@ -292,10 +304,10 @@ async function initApiConfig() {
 
     // 2. 初始化 API_SERVER（从配置中读取）
     API_SERVER = {
-        ip: config.serverIp || 'localhost', // 默认为 localhost
+        ip: config.serverip || 'localhost', // 默认为 localhost
         port: config.port || '8080'   // 默认为 8080
     };
-
+ 
     // 3. 动态生成 API_CONFIG（使用最新的 ip 和 port）
     API_CONFIG = {
       getDevBasicInfoUrl: `http://${API_SERVER.ip}:${API_SERVER.port}/api/v1/nodes/0/basicinfo`,
@@ -411,6 +423,7 @@ function initAutoRefreshToggle() {
 function init() {
     initChannelSelect();
     setupEventListeners();
+    updateSymbolTypeOptions();
     fetchDeviceInfo(); // 页面加载时请求设备信息
 
     // 初始化自动刷新开关状态
@@ -443,8 +456,9 @@ function setupEventListeners() {
     // 手动扫描
     elements.manualScan?.addEventListener('click', handleManualScan);
 
-    // 保存设置
-    elements.settingsSubmit?.addEventListener('click', handleSaveSettings);
+    // 保存设置（基础/高级）
+    elements.settingsBasicSubmit?.addEventListener('click', handleSaveBasicSettings);
+    elements.settingsAdvancedSubmit?.addEventListener('click', handleSaveAdvancedSettings);
     elements.deviceSettingsForm?.addEventListener('submit', (e) => e.preventDefault());
 
     // 重试加载
@@ -494,6 +508,18 @@ function setupEventListeners() {
 
     // 业务带宽变更监听
     elements.serviceBandwidthSelect?.addEventListener('change', validateBandwidthSettings);
+
+    // 高级参数联动
+    elements.cpTypeSelect?.addEventListener('change', () => updateSymbolTypeOptions());
+    elements.sCfgIdxSelect?.addEventListener('change', () => updateSymbolTypeOptions());
+
+    // 场景测试
+    elements.throughputTestBtn?.addEventListener('click', handleThroughputTest);
+    elements.nearTestBtn?.addEventListener('click', () => handleScenarioTest('近距测试'));
+    elements.midTestBtn?.addEventListener('click', () => handleScenarioTest('中距测试'));
+    elements.farTestBtn?.addEventListener('click', () => handleScenarioTest('远距测试'));
+    elements.lowPowerTestBtn?.addEventListener('click', () => handleScenarioTest('低功耗测试'));
+    elements.highPowerTestBtn?.addEventListener('click', () => handleScenarioTest('高功耗测试'));
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
@@ -1110,9 +1136,9 @@ function updateLastRefreshTime() {
             timeElement.className = 'text-xs text-gray-500 mt-2 text-right';
             timeElement.textContent = `自动刷新: ${timeString}`;
             deviceInfoCard.appendChild(timeElement);
-        } else if (existingTimeEl) {
-            existingTimeEl.textContent = `自动刷新: ${timeString}`;
-        }
+        } else if (document.getElementById('auto-refresh-time')) {
+            document.getElementById('auto-refresh-time').textContent = `自动刷新: ${timeString}`;
+        } 
     }
 }
 
@@ -1338,6 +1364,44 @@ function updateDeviceDisplay() {
         deviceVersionEl.textContent = currentDevice.version || '未知版本';
     }
 
+    // 高级参数显示
+    const deviceCpTypeEl = elements.deviceCpType;
+    const deviceSymbolTypeEl = elements.deviceSymbolType;
+    const deviceSysmsgPeriodEl = elements.deviceSysmsgPeriod;
+    const deviceSCfgIdxEl = elements.deviceSCfgIdx;
+    const devicePowEl = elements.devicePow;
+    const deviceRangeOptEl = elements.deviceRangeOpt;
+
+    if (deviceCpTypeEl) {
+        const cpType = currentDevice.cp_type;
+        deviceCpTypeEl.textContent = cpType !== undefined ? (CP_TYPE_LABELS[cpType] || cpType) : '未知';
+    }
+    if (deviceSymbolTypeEl) {
+        const symbolType = currentDevice.symbol_type;
+        deviceSymbolTypeEl.textContent = symbolType !== undefined ? symbolType : '未知';
+    }
+    if (deviceSysmsgPeriodEl) {
+        const period = currentDevice.sysmsg_period;
+        deviceSysmsgPeriodEl.textContent = period !== undefined ? (SYSMSG_PERIOD_LABELS[period] || period) : '未知';
+    }
+    if (deviceSCfgIdxEl) {
+        const sIdx = currentDevice.s_cfg_idx;
+        deviceSCfgIdxEl.textContent = sIdx !== undefined ? sIdx : '未知';
+    }
+    if (devicePowEl) {
+        const powVal = currentDevice.pow;
+        if (powVal !== undefined && powVal !== null && powVal !== '') {
+            const dbm = (Number(powVal) / 10).toFixed(1);
+            devicePowEl.textContent = `${powVal} (${dbm} dBm)`;
+        } else {
+            devicePowEl.textContent = '未知';
+        }
+    }
+    if (deviceRangeOptEl) {
+        const rangeOpt = currentDevice.range_opt;
+        deviceRangeOptEl.textContent = rangeOpt !== undefined ? (RANGE_OPT_LABELS[rangeOpt] || rangeOpt) : '未知';
+    }
+
     updateManualScanButtonState();
 }
 
@@ -1370,6 +1434,12 @@ function populateSettingsForm() {
     const serveripEl = document.getElementById('setting-server-ip');
     const serverportEl = document.getElementById('setting-server-port');
     const versionEl = document.getElementById('settings-version');
+    const cpTypeEl = elements.cpTypeSelect;
+    const sCfgIdxEl = elements.sCfgIdxSelect;
+    const symbolTypeEl = elements.symbolTypeSelect;
+    const sysmsgPeriodEl = elements.sysmsgPeriodSelect;
+    const powEl = elements.powInput;
+    const rangeOptEl = elements.rangeOptSelect;
     
     // 使用当前设备数据或默认值，确保属性名一致
     if (typeEl) {
@@ -1384,6 +1454,11 @@ function populateSettingsForm() {
     if (serveripEl) serveripEl.value = currentDevice.net_manage_ip;
     if (serverportEl) serverportEl.value = currentDevice.log_port;
     if (versionEl) versionEl.value = currentDevice.version;
+    if (cpTypeEl && currentDevice.cp_type !== undefined) cpTypeEl.value = currentDevice.cp_type;
+    if (sCfgIdxEl && currentDevice.s_cfg_idx !== undefined) sCfgIdxEl.value = currentDevice.s_cfg_idx;
+    if (sysmsgPeriodEl && currentDevice.sysmsg_period !== undefined) sysmsgPeriodEl.value = currentDevice.sysmsg_period;
+    if (powEl && currentDevice.pow !== undefined) powEl.value = currentDevice.pow;
+    if (rangeOptEl && currentDevice.range_opt !== undefined) rangeOptEl.value = currentDevice.range_opt;
 
     updateManualScanButtonState();
     
@@ -1418,6 +1493,9 @@ function populateSettingsForm() {
         if (serviceBandwidthEl && currentDevice.tfc_bw) {
             serviceBandwidthEl.value = currentDevice.tfc_bw;
         }
+
+        // 更新符号类型选项并赋值
+        updateSymbolTypeOptions(currentDevice.symbol_type);
 
         // 重新验证带宽设置
         validateBandwidthSettings();
@@ -1503,6 +1581,49 @@ function validateBandwidthSettings() {
 
     bandwidthWarning.classList.add('hidden');
     return true;
+}
+
+// 根据信道与cp配置刷新符号类型选项
+function updateSymbolTypeOptions(preferredValue) {
+    const cpTypeEl = elements.cpTypeSelect;
+    const sCfgIdxEl = elements.sCfgIdxSelect;
+    const symbolTypeEl = elements.symbolTypeSelect;
+    const hintEl = elements.symbolTypeHint;
+
+    if (!cpTypeEl || !sCfgIdxEl || !symbolTypeEl) return;
+
+    const cpType = parseInt(cpTypeEl.value) || 0;
+    const sCfgIdx = parseInt(sCfgIdxEl.value) || 0;
+    const allowed = SYMBOL_TYPE_RULES?.[cpType]?.[sCfgIdx] || [];
+    const currentValue = preferredValue !== undefined ? preferredValue : parseInt(symbolTypeEl.value);
+
+    symbolTypeEl.innerHTML = '';
+
+    if (allowed.length === 0) {
+        const option = document.createElement('option');
+        option.value = '';
+        option.textContent = '暂无可选值';
+        symbolTypeEl.appendChild(option);
+        symbolTypeEl.disabled = true;
+    } else {
+        allowed.forEach(val => {
+            const option = document.createElement('option');
+            option.value = val;
+            option.textContent = val;
+            symbolTypeEl.appendChild(option);
+        });
+        symbolTypeEl.disabled = false;
+
+        if (!allowed.includes(currentValue)) {
+            symbolTypeEl.value = allowed[0];
+        } else {
+            symbolTypeEl.value = currentValue;
+        }
+    }
+
+    if (hintEl) {
+        hintEl.textContent = `根据 cp_type=${cpType} 与 s_cfg_idx=${sCfgIdx} 可选: ${allowed.join('、') || '无'}`;
+    }
 }
 
 // 启动自动刷新
@@ -1607,8 +1728,8 @@ function switchPage(pageId) {
     }
 }
 
-// 保存设置 - 确保设备类型正确更新并同步
-async function handleSaveSettings() {
+// 保存基础参数
+async function handleSaveBasicSettings() {
     // 验证带宽设置
     if (!validateBandwidthSettings()) {
         showNotification('操作失败', '业务带宽不能大于物理带宽', true);
@@ -1656,9 +1777,9 @@ async function handleSaveSettings() {
     }
     
     // 显示加载状态
-    if (elements.settingsSubmit && elements.submitLoading) {
-        elements.settingsSubmit.disabled = true;
-        elements.submitLoading.classList.remove('hidden');
+    if (elements.settingsBasicSubmit && elements.basicSubmitLoading) {
+        elements.settingsBasicSubmit.disabled = true;
+        elements.basicSubmitLoading.classList.remove('hidden');
     }
     try {
         // 准备发送的数据 - 使用与设备显示一致的属性名
@@ -1735,9 +1856,9 @@ async function handleSaveSettings() {
         showNotification('操作失败', `保存设置时发生错误: ${error.message}`, true);
     } finally {
         // 隐藏加载状态
-        if (elements.settingsSubmit && elements.submitLoading) {
-            elements.settingsSubmit.disabled = false;
-            elements.submitLoading.classList.add('hidden');
+        if (elements.settingsBasicSubmit && elements.basicSubmitLoading) {
+            elements.settingsBasicSubmit.disabled = false;
+            elements.basicSubmitLoading.classList.add('hidden');
         }
     }
 }
@@ -1756,6 +1877,122 @@ function getChannelSupportedBandwidths(channel) {
 
     // 默认规则
     return CHANNEL_BANDWIDTH_RULES.default;
+}
+
+// 保存高级参数
+async function handleSaveAdvancedSettings() {
+    const cpTypeEl = elements.cpTypeSelect;
+    const sCfgIdxEl = elements.sCfgIdxSelect;
+    const symbolTypeEl = elements.symbolTypeSelect;
+    const sysmsgPeriodEl = elements.sysmsgPeriodSelect;
+    const powEl = elements.powInput;
+    const rangeOptEl = elements.rangeOptSelect;
+
+    if (!cpTypeEl || !sCfgIdxEl || !symbolTypeEl || !sysmsgPeriodEl || !rangeOptEl) {
+        showNotification('操作失败', '高级参数控件未正确加载', true);
+        return;
+    }
+
+    // 确保符号类型选项同步
+    updateSymbolTypeOptions();
+
+    const cpType = parseInt(cpTypeEl.value);
+    const sCfgIdx = parseInt(sCfgIdxEl.value);
+    const symbolType = parseInt(symbolTypeEl.value);
+    const sysmsgPeriod = parseInt(sysmsgPeriodEl.value);
+    const rangeOpt = parseInt(rangeOptEl.value);
+    const powValueRaw = powEl?.value ?? '';
+    const powValue = powValueRaw === '' ? null : parseInt(powValueRaw);
+
+    if (Number.isNaN(cpType) || Number.isNaN(sCfgIdx) || Number.isNaN(symbolType) || Number.isNaN(sysmsgPeriod) || Number.isNaN(rangeOpt)) {
+        showNotification('操作失败', '请完整选择高级参数', true);
+        return;
+    }
+
+    if (powValue !== null) {
+        if (Number.isNaN(powValue) || powValue < -310 || powValue > 250) {
+            showNotification('操作失败', '功率范围需在 -310 到 250', true);
+            return;
+        }
+    }
+
+    if (elements.settingsAdvancedSubmit && elements.advancedSubmitLoading) {
+        elements.settingsAdvancedSubmit.disabled = true;
+        elements.advancedSubmitLoading.classList.remove('hidden');
+    }
+
+    try {
+        const postData = {
+            cp_type: cpType,
+            s_cfg_idx: sCfgIdx,
+            symbol_type: symbolType,
+            sysmsg_period: sysmsgPeriod,
+            range_opt: rangeOpt,
+            pow: powValue
+        };
+
+        if (powValue === null) {
+            delete postData.pow;
+        }
+
+        const response = await fetch(API_CONFIG.setNodeUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(postData),
+            timeout: API_CONFIG.timeout
+        });
+
+        if (!response.ok) {
+            throw new Error(`保存失败: ${response.status} ${response.statusText}`);
+        }
+
+        currentDevice = {
+            ...currentDevice,
+            cp_type: cpType,
+            s_cfg_idx: sCfgIdx,
+            symbol_type: symbolType,
+            sysmsg_period: sysmsgPeriod,
+            range_opt: rangeOpt,
+            pow: powValue === null ? currentDevice.pow : powValue
+        };
+
+        updateDeviceDisplay();
+        populateSettingsForm();
+        showNotification('操作成功', '高级参数已保存', false);
+    } catch (error) {
+        console.error('保存高级参数失败:', error);
+        showNotification('操作失败', `保存高级参数时发生错误: ${error.message}`, true);
+    } finally {
+        if (elements.settingsAdvancedSubmit && elements.advancedSubmitLoading) {
+            elements.settingsAdvancedSubmit.disabled = false;
+            elements.advancedSubmitLoading.classList.add('hidden');
+        }
+    }
+}
+
+// 吞吐量峰值测试（前端占位模拟）
+function handleThroughputTest() {
+    const btn = elements.throughputTestBtn;
+    if (!btn) return;
+
+    const prevLabel = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa fa-spinner fa-spin mr-2"></i>测试中...';
+
+    if (elements.throughputUp) elements.throughputUp.value = '测试中...';
+    if (elements.throughputDown) elements.throughputDown.value = '测试中...';
+
+    setTimeout(() => {
+        if (elements.throughputUp) elements.throughputUp.value = '186.4';
+        if (elements.throughputDown) elements.throughputDown.value = '172.9';
+        btn.disabled = false;
+        btn.innerHTML = prevLabel;
+        showNotification('场景测试', '吞吐量峰值测试已触发，等待后端结果', false);
+    }, 1200);
+}
+
+function handleScenarioTest(label) {
+    showNotification('场景测试', `${label} 已触发，等待后端结果`, false);
 }
 
 //扫描附近的G节点
