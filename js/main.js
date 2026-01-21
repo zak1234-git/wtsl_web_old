@@ -16,6 +16,17 @@ let autoJoinRequestInProgress = false;
 
 let API_SERVER = {};
 let API_CONFIG = {};
+let ADV_API_CONFIG = {}; // 高级信息相关接口独立配置，避免污染通用配置
+
+// 构造高级信息接口地址，使用与基础接口相同的IP/端口
+function setAdvApiConfig(ip, port, token = '', timeout = 10000) {
+    ADV_API_CONFIG = {
+        getAdvInfoUrl: `http://${ip}:${port}/api/v1/nodes/0/advinfo`,
+        setAdvInfoUrl: `http://${ip}:${port}/api/v1/nodes/0/advinfo`,
+        token: token || '',
+        timeout: timeout || 10000
+    };
+}
 
 const THEME_STORAGE_KEY = 'theme';
 
@@ -241,7 +252,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                 deviceSymbolType: document.getElementById('device-symbol-type'),
                 deviceSysmsgPeriod: document.getElementById('device-sysmsg-period'),
                 deviceSCfgIdx: document.getElementById('device-s-cfg-idx'),
-                devicePow: document.getElementById('device-pow'),
                 deviceRangeOpt: document.getElementById('device-range-opt')
         };
 
@@ -387,6 +397,9 @@ async function initApiConfig() {
       timeout: 10000
     };
 
+    // 维护独立的高级信息接口配置（可携带独立token）
+    setAdvApiConfig(API_SERVER.ip, API_SERVER.port, config.token || config.authToken, API_CONFIG.timeout);
+
     console.log('API config :', API_CONFIG);
     return API_CONFIG; // 返回初始化后的配置，供其他逻辑使用
 
@@ -406,6 +419,7 @@ async function initApiConfig() {
       autojoinNetworkUrl: `http://localhost:8080/api/v1/nodes/0/autojoinNetwork`,
       timeout: 10000
     };
+        setAdvApiConfig('localhost', '8080', '', API_CONFIG.timeout);
     return API_CONFIG;
   }
 }
@@ -1300,6 +1314,9 @@ async function fetchDeviceInfo() {
         
         usingDefaultData = false;
 
+        // 追加获取高级信息，使用独立接口（静默 + 跳过UI刷新，避免重复绘制）
+        await fetchAdvancedInfo(true, true);
+
         // 隐藏默认数据指示器
         elements.deviceInfoDefaultIndicator?.classList.add('hidden');
         elements.connectedDevicesDefaultIndicator?.classList.add('hidden');
@@ -1353,6 +1370,88 @@ async function fetchDeviceInfo() {
         // 显示错误通知
         showNotification('加载失败', errorMessage, true);
         updateLastRefreshTime();
+    }
+}
+
+// 获取高级信息（cp_type / symbol_type / sysmsg_period / s_cfg_idx / range_opt 等）
+async function fetchAdvancedInfo(silent = false, skipUiUpdate = false) {
+    // 检查高级接口配置是否已初始化
+    if (!ADV_API_CONFIG.getAdvInfoUrl) {
+        if (!silent) showNotification('高级信息获取失败', '高级接口未初始化', true);
+        return;
+    }
+
+    // 设置请求超时时间
+    const timeoutMs = ADV_API_CONFIG.timeout || API_CONFIG.timeout || 10000;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+    // 设置请求头，包含必要的认证信息
+    const headers = { 'Content-Type': 'application/json' };
+    if (ADV_API_CONFIG.token) {
+        headers['Authorization'] = `Bearer ${ADV_API_CONFIG.token}`;
+    }
+
+    try {
+        // 发送GET请求以获取高级信息
+        const response = await fetch(ADV_API_CONFIG.getAdvInfoUrl, {
+            method: 'GET',
+            headers,
+            signal: controller.signal
+        });
+
+        // 清除超时计时器
+        clearTimeout(timeoutId);
+
+        // 检查HTTP响应状态
+        if (!response.ok) {
+            throw new Error(`HTTP错误: ${response.status}`);
+        }
+
+        // 解析响应数据
+        const result = await response.json();
+        if (!result || !result.data) {
+            throw new Error('未获取到高级信息数据');
+        }
+        if (result.status && result.status !== true && result.status !== 'success') {
+            throw new Error(result.message || '高级信息返回异常');
+        }
+
+        // 提取高级信息数据
+        const advData = result.data;
+
+        // 获取发射功率，优先使用tx_power字段，其次使用real_power字段
+        const txPower = advData.tx_power ?? advData.real_power?.real_pow ?? currentDevice.tx_power;
+
+        // 更新当前设备信息
+        currentDevice = {
+            ...currentDevice,
+            cp_type: advData.cp_type,
+            symbol_type: advData.symbol_type,
+            sysmsg_period: advData.sysmsg_period,
+            s_cfg_idx: advData.s_cfg_idx,
+            range_opt: advData.range_opt,
+            tx_power: txPower,
+            pow: txPower ?? currentDevice.pow
+        };
+
+        // 如果未跳过UI更新，则更新设备显示和设置表单
+        if (!skipUiUpdate) {
+            updateDeviceDisplay();
+            populateSettingsForm();
+        }
+
+        // 如果不是静默模式，显示成功通知
+        if (!silent) {
+            showNotification('高级信息', '高级参数已更新', false);
+        }
+    } catch (error) {
+        // 清除超时计时器
+        clearTimeout(timeoutId);
+        console.error('获取高级信息失败:', error);
+        if (!silent) {
+            showNotification('高级信息获取失败', error.message, true);
+        }
     }
 }
 
@@ -1432,7 +1531,6 @@ function updateDeviceDisplay() {
     const deviceSymbolTypeEl = elements.deviceSymbolType;
     const deviceSysmsgPeriodEl = elements.deviceSysmsgPeriod;
     const deviceSCfgIdxEl = elements.deviceSCfgIdx;
-    const devicePowEl = elements.devicePow;
     const deviceRangeOptEl = elements.deviceRangeOpt;
 
     if (deviceCpTypeEl) {
@@ -1451,15 +1549,6 @@ function updateDeviceDisplay() {
         const sIdx = currentDevice.s_cfg_idx;
         deviceSCfgIdxEl.textContent = sIdx !== undefined ? sIdx : '未知';
     }
-    if (devicePowEl) {
-        const powVal = currentDevice.pow;
-        if (powVal !== undefined && powVal !== null && powVal !== '') {
-            const dbm = (Number(powVal) / 10).toFixed(1);
-            devicePowEl.textContent = `${powVal} (${dbm} dBm)`;
-        } else {
-            devicePowEl.textContent = '未知';
-        }
-    }
     if (deviceRangeOptEl) {
         const rangeOpt = currentDevice.range_opt;
         deviceRangeOptEl.textContent = rangeOpt !== undefined ? (RANGE_OPT_LABELS[rangeOpt] || rangeOpt) : '未知';
@@ -1468,6 +1557,7 @@ function updateDeviceDisplay() {
     updateManualScanButtonState();
 }
 
+// 根据设备类型更新手动扫描按钮状态
 function updateManualScanButtonState() {
     const manualScanButton = elements.manualScan;
     if (!manualScanButton) return;
@@ -1520,7 +1610,12 @@ function populateSettingsForm() {
     if (cpTypeEl && currentDevice.cp_type !== undefined) cpTypeEl.value = currentDevice.cp_type;
     if (sCfgIdxEl && currentDevice.s_cfg_idx !== undefined) sCfgIdxEl.value = currentDevice.s_cfg_idx;
     if (sysmsgPeriodEl && currentDevice.sysmsg_period !== undefined) sysmsgPeriodEl.value = currentDevice.sysmsg_period;
-    if (powEl && currentDevice.pow !== undefined) powEl.value = currentDevice.pow;
+    if (powEl) {
+        const txPower = currentDevice.tx_power ?? currentDevice.pow;
+        if (txPower !== undefined) {
+            powEl.value = txPower;
+        }
+    }
     if (rangeOptEl && currentDevice.range_opt !== undefined) rangeOptEl.value = currentDevice.range_opt;
 
     updateManualScanButtonState();
@@ -1906,11 +2001,11 @@ async function handleSaveBasicSettings() {
             showNotification('设置已保存', '请扫描并连接到G节点', false);
         } else {
 	*/	
-            // 主网关 - 跳转到设备信息页面
-            setTimeout(() => {
-                showNotification('保存配置中', `请稍等...`, false);
-                switchPage('device-display');
-            }, 3000);
+            // 主网关 - 跳转到设备信息页面（需求：暂时取消跳转，仅保留提示）
+            // setTimeout(() => {
+            //     showNotification('保存配置中', `请稍等...`, false);
+            //     switchPage('device-display');
+            // }, 3000);
             showNotification('操作成功', '设置已保存并应用', false);
         //}
         
@@ -1944,34 +2039,39 @@ function getChannelSupportedBandwidths(channel) {
 
 // 保存高级参数
 async function handleSaveAdvancedSettings() {
-    const cpTypeEl = elements.cpTypeSelect;
-    const sCfgIdxEl = elements.sCfgIdxSelect;
-    const symbolTypeEl = elements.symbolTypeSelect;
-    const sysmsgPeriodEl = elements.sysmsgPeriodSelect;
-    const powEl = elements.powInput;
-    const rangeOptEl = elements.rangeOptSelect;
+    // 获取高级参数表单中的各个元素
+    const cpTypeEl = elements.cpTypeSelect; 
+    const sCfgIdxEl = elements.sCfgIdxSelect; 
+    const symbolTypeEl = elements.symbolTypeSelect; 
+    const sysmsgPeriodEl = elements.sysmsgPeriodSelect; 
+    const powEl = elements.powInput; 
+    const rangeOptEl = elements.rangeOptSelect; 
 
+    // 检查是否所有控件都已正确加载
     if (!cpTypeEl || !sCfgIdxEl || !symbolTypeEl || !sysmsgPeriodEl || !rangeOptEl) {
         showNotification('操作失败', '高级参数控件未正确加载', true);
         return;
     }
 
-    // 确保符号类型选项同步
+    // 确保符号类型选项与当前选择的循环前缀和配置索引同步
     updateSymbolTypeOptions();
 
-    const cpType = parseInt(cpTypeEl.value);
-    const sCfgIdx = parseInt(sCfgIdxEl.value);
-    const symbolType = parseInt(symbolTypeEl.value);
-    const sysmsgPeriod = parseInt(sysmsgPeriodEl.value);
-    const rangeOpt = parseInt(rangeOptEl.value);
-    const powValueRaw = powEl?.value ?? '';
-    const powValue = powValueRaw === '' ? null : parseInt(powValueRaw);
+    // 获取表单中的值
+    const cpType = parseInt(cpTypeEl.value); 
+    const sCfgIdx = parseInt(sCfgIdxEl.value); 
+    const symbolType = parseInt(symbolTypeEl.value); 
+    const sysmsgPeriod = parseInt(sysmsgPeriodEl.value); 
+    const rangeOpt = parseInt(rangeOptEl.value); 
+    const powValueRaw = powEl?.value ?? ''; 
+    const powValue = powValueRaw === '' ? null : parseInt(powValueRaw); 
 
+    // 验证表单数据是否完整
     if (Number.isNaN(cpType) || Number.isNaN(sCfgIdx) || Number.isNaN(symbolType) || Number.isNaN(sysmsgPeriod) || Number.isNaN(rangeOpt)) {
         showNotification('操作失败', '请完整选择高级参数', true);
         return;
     }
 
+    // 验证功率值是否在合理范围内
     if (powValue !== null) {
         if (Number.isNaN(powValue) || powValue < -310 || powValue > 250) {
             showNotification('操作失败', '功率范围需在 -310 到 250', true);
@@ -1979,36 +2079,53 @@ async function handleSaveAdvancedSettings() {
         }
     }
 
+    // 显示加载状态
     if (elements.settingsAdvancedSubmit && elements.advancedSubmitLoading) {
         elements.settingsAdvancedSubmit.disabled = true;
         elements.advancedSubmitLoading.classList.remove('hidden');
     }
 
     try {
+        // 准备发送的数据
         const postData = {
             cp_type: cpType,
             s_cfg_idx: sCfgIdx,
             symbol_type: symbolType,
             sysmsg_period: sysmsgPeriod,
-            range_opt: rangeOpt,
-            pow: powValue
+            range_opt: rangeOpt
         };
 
-        if (powValue === null) {
-            delete postData.pow;
+        // 如果功率值不为空，则添加到数据中
+        if (powValue !== null) {
+            postData.tx_power = powValue;
         }
 
-        const response = await fetch(API_CONFIG.setNodeUrl, {
+        // 设置请求头
+        const headers = { 'Content-Type': 'application/json' };
+        if (ADV_API_CONFIG.token) {
+            headers['Authorization'] = `Bearer ${ADV_API_CONFIG.token}`;
+        }
+
+        // 发送POST请求保存高级参数
+        const response = await fetch(ADV_API_CONFIG.setAdvInfoUrl, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers,
             body: JSON.stringify(postData),
-            timeout: API_CONFIG.timeout
+            timeout: ADV_API_CONFIG.timeout || API_CONFIG.timeout
         });
 
+        // 检查响应状态
         if (!response.ok) {
             throw new Error(`保存失败: ${response.status} ${response.statusText}`);
         }
 
+        // 解析响应数据
+        const result = await response.json();
+        if (result.status && result.status !== true && result.status !== 'success') {
+            throw new Error(result.message || '高级参数保存失败');
+        }
+
+        // 更新当前设备信息
         currentDevice = {
             ...currentDevice,
             cp_type: cpType,
@@ -2016,16 +2133,20 @@ async function handleSaveAdvancedSettings() {
             symbol_type: symbolType,
             sysmsg_period: sysmsgPeriod,
             range_opt: rangeOpt,
+            tx_power: powValue === null ? currentDevice.tx_power : powValue,
             pow: powValue === null ? currentDevice.pow : powValue
         };
 
+        // 更新设备显示和表单
         updateDeviceDisplay();
         populateSettingsForm();
         showNotification('操作成功', '高级参数已保存', false);
     } catch (error) {
+        // 捕获并处理错误
         console.error('保存高级参数失败:', error);
         showNotification('操作失败', `保存高级参数时发生错误: ${error.message}`, true);
     } finally {
+        // 恢复按钮状态
         if (elements.settingsAdvancedSubmit && elements.advancedSubmitLoading) {
             elements.settingsAdvancedSubmit.disabled = false;
             elements.advancedSubmitLoading.classList.add('hidden');
