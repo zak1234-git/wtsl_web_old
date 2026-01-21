@@ -4,6 +4,15 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>设备管理系统</title>
+    <script>
+        // 预先设置主题，避免首次渲染闪烁
+        (() => {
+            const storageKey = 'theme';
+            const stored = localStorage.getItem(storageKey);
+            const theme = stored || 'dark';
+            document.documentElement.setAttribute('data-theme', theme);
+        })();
+    </script>
     <!-- 引入外部资源 -->
     <script src="js/tailwindcss_3.4.17.js"></script>
     <link href="css/font-awesome.min.css" rel="stylesheet">
@@ -61,10 +70,90 @@
     </style>
 
     <style>
-        /* 基础样式 */
-        body {
+        :root {
+            --color-primary: #165DFF;
+            --color-accent: #F97316;
+            --bg-body-light: #F4F6FB;
+            --bg-card-light: #FFFFFF;
+            --bg-subcard-light: #F8FAFF;
+            --border-light: #DCE3F0;
+            --text-main-light: #1F2937;
+            --text-secondary-light: #4B5563;
+            --thead-light: #EDF2FB;
+        }
+
+        /* 主题基础色 */
+        [data-theme="dark"] body {
             background-color: #0F172A;
             color: #E5E7EB;
+        }
+
+        [data-theme="light"] body {
+            background-color: var(--bg-body-light);
+            color: var(--text-main-light);
+        }
+
+        /* 卡片与文本覆盖 */
+        [data-theme="light"] .bg-dark {
+            background-color: var(--bg-card-light) !important;
+            color: var(--text-main-light) !important;
+        }
+
+        [data-theme="light"] .bg-dark-lighter {
+            background-color: var(--bg-subcard-light) !important;
+            color: var(--text-main-light) !important;
+        }
+
+        [data-theme="light"] .bg-dark-lightest {
+            background-color: #E8EDF7 !important;
+        }
+
+        [data-theme="light"] .text-white {
+            color: var(--text-main-light) !important;
+        }
+
+        [data-theme="light"] .text-gray-400,
+        [data-theme="light"] .text-gray-300,
+        [data-theme="light"] .text-gray-500 {
+            color: var(--text-secondary-light) !important;
+        }
+
+        [data-theme="light"] .border-dark,
+        [data-theme="light"] .border-dark-lightest,
+        [data-theme="light"] .border-dark-lighter {
+            border-color: var(--border-light) !important;
+        }
+
+        [data-theme="light"] header.bg-dark {
+            background-color: var(--bg-card-light) !important;
+        }
+
+        [data-theme="light"] .nav-shadow {
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
+        }
+
+        [data-theme="light"] .card-shadow {
+            box-shadow: 0 6px 20px rgba(17, 24, 39, 0.08);
+        }
+
+        [data-theme="light"] table thead tr {
+            background-color: var(--thead-light);
+        }
+
+        [data-theme="light"] table tbody tr:hover {
+            background-color: #EEF2FB;
+        }
+
+        [data-theme="light"] .hover\:bg-dark:hover,
+        [data-theme="light"] .hover\:bg-dark-lighter:hover,
+        [data-theme="light"] .hover\:bg-dark-lightest:hover {
+            background-color: #E8EDF7 !important;
+        }
+
+        [data-theme="light"] .bg-primary,
+        [data-theme="light"] .bg-primary\/20,
+        [data-theme="light"] .bg-primary\/30 {
+            color: #FFFFFF;
         }
 
         /* 滚动条样式优化 */
@@ -84,6 +173,14 @@
 
         ::-webkit-scrollbar-thumb:hover {
             background: #64748B;
+        }
+
+        [data-theme="light"] ::-webkit-scrollbar-track {
+            background: #E5E7EB;
+        }
+
+        [data-theme="light"] ::-webkit-scrollbar-thumb {
+            background: #CBD5E1;
         }
 
         /* 加载动画 */
@@ -107,27 +204,33 @@
                 <h1 class="text-xl font-bold text-white">设备管理系统</h1>
             </div>
 
-            <!-- 桌面端导航 -->
-            <nav class="hidden md:flex items-center space-x-1">
-                <a href="#device-display" class="nav-link px-4 py-2 rounded-lg hover:bg-dark-lighter transition-colors">
-                    <i class="fa fa-info-circle mr-1"></i>设备信息
-                </a>
-                <a href="#device-settings" class="nav-link px-4 py-2 rounded-lg hover:bg-dark-lighter transition-colors">
-                    <i class="fa fa-cog mr-1"></i>设备设置
-                </a>
-                <a href="#firmware-upgrade" class="nav-link px-4 py-2 rounded-lg hover:bg-dark-lighter transition-colors">
-                    <i class="fa fa-download mr-1"></i>软件升级
-                </a>
-                <!-- 移除导航中的节点扫描选项 -->
-                 <a href="#node-scan" class="nav-link px-4 py-2 rounded-lg hover:bg-dark-lighter transition-colors hidden">
-                    <i class="fa fa-search mr-1"></i>节点扫描
-                </a>
-            </nav>
+            <div class="flex items-center space-x-3">
+                <!-- 桌面端导航 -->
+                <nav class="hidden md:flex items-center space-x-1">
+                    <a href="#device-display" class="nav-link px-4 py-2 rounded-lg hover:bg-dark-lighter transition-colors">
+                        <i class="fa fa-info-circle mr-1"></i>设备信息
+                    </a>
+                    <a href="#device-settings" class="nav-link px-4 py-2 rounded-lg hover:bg-dark-lighter transition-colors">
+                        <i class="fa fa-cog mr-1"></i>设备设置
+                    </a>
+                    <a href="#firmware-upgrade" class="nav-link px-4 py-2 rounded-lg hover:bg-dark-lighter transition-colors">
+                        <i class="fa fa-download mr-1"></i>软件升级
+                    </a>
+                    <!-- 移除导航中的节点扫描选项 -->
+                    <a href="#node-scan" class="nav-link px-4 py-2 rounded-lg hover:bg-dark-lighter transition-colors hidden">
+                        <i class="fa fa-search mr-1"></i>节点扫描
+                    </a>
+                </nav>
 
-            <!-- 移动端菜单按钮 -->
-            <button id="mobile-menu-button" class="md:hidden text-gray-300 hover:text-white">
-                <i class="fa fa-bars text-xl"></i>
-            </button>
+                <button id="theme-toggle" aria-label="切换主题" class="hidden md:inline-flex items-center justify-center w-10 h-10 rounded-full bg-dark-lighter hover:bg-dark-lightest text-gray-300 transition-colors nav-shadow">
+                    <i id="theme-toggle-icon" class="fa fa-moon-o"></i>
+                </button>
+
+                <!-- 移动端菜单按钮 -->
+                <button id="mobile-menu-button" class="md:hidden text-gray-300 hover:text-white">
+                    <i class="fa fa-bars text-xl"></i>
+                </button>
+            </div>
         </div>
 
         <!-- 移动端导航菜单 -->
@@ -146,6 +249,10 @@
                 <a href="#node-scan" class="nav-link px-4 py-2 rounded-lg hover:bg-dark transition-colors hidden">
                     <i class="fa fa-search mr-1"></i>节点扫描
                 </a>
+                <button id="theme-toggle-mobile" aria-label="切换主题" class="flex items-center space-x-2 px-4 py-2 rounded-lg hover:bg-dark transition-colors text-gray-300">
+                    <i id="theme-toggle-icon-mobile" class="fa fa-moon-o"></i>
+                    <span>切换主题</span>
+                </button>
             </div>
         </div>
     </header>

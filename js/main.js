@@ -17,6 +17,67 @@ let autoJoinRequestInProgress = false;
 let API_SERVER = {};
 let API_CONFIG = {};
 
+const THEME_STORAGE_KEY = 'theme';
+
+// 读取首选主题（localStorage优先，其次媒体查询）
+function getInitialTheme() {
+    const stored = localStorage.getItem(THEME_STORAGE_KEY);
+    if (stored === 'light' || stored === 'dark') {
+        return stored;
+    }
+    return 'dark';
+}
+
+// 应用主题并同步图标状态
+function applyTheme(theme) {
+    const safeTheme = theme === 'light' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', safeTheme);
+
+    const desktopIcon = document.getElementById('theme-toggle-icon');
+    const mobileIcon = document.getElementById('theme-toggle-icon-mobile');
+
+    if (desktopIcon) {
+        desktopIcon.classList.toggle('fa-moon-o', safeTheme === 'dark');
+        desktopIcon.classList.toggle('fa-sun-o', safeTheme === 'light');
+    }
+    if (mobileIcon) {
+        mobileIcon.classList.toggle('fa-moon-o', safeTheme === 'dark');
+        mobileIcon.classList.toggle('fa-sun-o', safeTheme === 'light');
+    }
+}
+
+// 初始化主题切换按钮
+function initThemeControls() {
+    const initialTheme = getInitialTheme();
+    applyTheme(initialTheme);
+
+    const desktopToggle = document.getElementById('theme-toggle');
+    const mobileToggle = document.getElementById('theme-toggle-mobile');
+
+    const handleToggle = () => {
+        const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
+        const nextTheme = currentTheme === 'dark' ? 'light' : 'dark';
+        applyTheme(nextTheme);
+        localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
+    };
+
+    desktopToggle?.addEventListener('click', handleToggle);
+    mobileToggle?.addEventListener('click', handleToggle);
+
+    // 当用户未主动选择时，监听系统主题变更
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const handleMediaChange = (event) => {
+        const stored = localStorage.getItem(THEME_STORAGE_KEY);
+        if (stored === 'light' || stored === 'dark') return;
+        applyTheme(event.matches ? 'dark' : 'light');
+    };
+    if (mediaQuery.addEventListener) {
+        mediaQuery.addEventListener('change', handleMediaChange);
+    } else if (mediaQuery.addListener) {
+        mediaQuery.addListener(handleMediaChange);
+    }
+}
+
 // 信道与带宽限制映射规则
 const CHANNEL_BANDWIDTH_RULES = {
     // 信道数组：[可用的带宽选项]
@@ -183,6 +244,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 devicePow: document.getElementById('device-pow'),
                 deviceRangeOpt: document.getElementById('device-range-opt')
         };
+
+            initThemeControls();
 
         const apiConfig = await initApiConfig();
         // 这里可以调用 API（例如使用 apiConfig.getDevBasicinfoUrl 发送请求）
