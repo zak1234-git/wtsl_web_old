@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>设备管理系统</title>
+    <script>
+        // 预先设置主题，避免首次渲染闪烁（与主站一致）
+        (() => {
+            const storageKey = 'theme';
+            const stored = localStorage.getItem(storageKey);
+            const theme = stored || 'dark';
+            document.documentElement.setAttribute('data-theme', theme);
+        })();
+    </script>
+    <script src="js/tailwindcss_3.4.17.js"></script>
+    <link href="css/font-awesome.min.css" rel="stylesheet">
+    <link href="css/style.css" rel="stylesheet">
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#165DFF',
+                        secondary: '#722ED1',
+                        accent: '#F97316',
+                        success: '#10B981',
+                        warning: '#F59E0B',
+                        danger: '#EF4444',
+                        dark: {
+                            DEFAULT: '#111827',
+                            lighter: '#1F2937',
+                            lightest: '#374151'
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                }
+            }
+        };
+    </script>
+
+    <style type="text/tailwindcss">
+        @layer utilities {
+            .content-auto { content-visibility: auto; }
+            .card-shadow { box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15); }
+            .nav-shadow { box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1); }
+            .pulse-animation { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+            @keyframes pulse {
+                0%, 100% { opacity: 1; }
+                50% { opacity: 0.7; }
+            }
+        }
+    </style>
+
+    <style>
+        :root {
+            --color-primary: #165DFF;
+            --color-accent: #F97316;
+            --bg-body-light: #F4F6FB;
+            --bg-card-light: #FFFFFF;
+            --bg-subcard-light: #F8FAFF;
+            --border-light: #DCE3F0;
+            --text-main-light: #1F2937;
+            --text-secondary-light: #4B5563;
+            --thead-light: #EDF2FB;
+        }
+
+        [data-theme="dark"] body {
+            background-color: #0F172A;
+            color: #E5E7EB;
+        }
+
+        [data-theme="light"] body {
+            background-color: var(--bg-body-light);
+            color: var(--text-main-light);
+        }
+
+        [data-theme="light"] .bg-dark { background-color: var(--bg-card-light) !important; color: var(--text-main-light) !important; }
+        [data-theme="light"] .bg-dark-lighter { background-color: var(--bg-subcard-light) !important; color: var(--text-main-light) !important; }
+        [data-theme="light"] .bg-dark-lightest { background-color: #E8EDF7 !important; }
+        [data-theme="light"] .text-white { color: var(--text-main-light) !important; }
+        [data-theme="light"] .text-gray-400,
+        [data-theme="light"] .text-gray-300,
+        [data-theme="light"] .text-gray-500 { color: var(--text-secondary-light) !important; }
+        [data-theme="light"] .border-dark,
+        [data-theme="light"] .border-dark-lightest,
+        [data-theme="light"] .border-dark-lighter { border-color: var(--border-light) !important; }
+        [data-theme="light"] header.bg-dark { background-color: var(--bg-card-light) !important; }
+        [data-theme="light"] .nav-shadow { box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04); }
+        [data-theme="light"] .card-shadow { box-shadow: 0 6px 20px rgba(17, 24, 39, 0.08); }
+        [data-theme="light"] table thead tr { background-color: var(--thead-light); }
+        [data-theme="light"] table tbody tr:hover { background-color: #EEF2FB; }
+        [data-theme="light"] .hover\:bg-dark:hover,
+        [data-theme="light"] .hover\:bg-dark-lighter:hover,
+        [data-theme="light"] .hover\:bg-dark-lightest:hover { background-color: #E8EDF7 !important; }
+        [data-theme="light"] .bg-primary,
+        [data-theme="light"] .bg-primary\/20,
+        [data-theme="light"] .bg-primary\/30 { color: #FFFFFF; }
+
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #1E293B; }
+        ::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #64748B; }
+        [data-theme="light"] ::-webkit-scrollbar-track { background: #E5E7EB; }
+        [data-theme="light"] ::-webkit-scrollbar-thumb { background: #CBD5E1; }
+
+        .loader { border-top-color: #165DFF; animation: spinner 0.6s linear infinite; }
+        @keyframes spinner { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="min-h-screen font-sans">
+    <header class="bg-dark sticky top-0 z-50 nav-shadow">
+        <div class="container mx-auto px-4 py-3 flex justify-between items-center">
+            <div class="flex items-center space-x-2">
+                <i class="fa fa-server text-primary text-2xl"></i>
+                <h1 class="text-xl font-bold text-white">设备管理系统</h1>
+            </div>
+
+            <div class="flex items-center space-x-3">
+                <nav class="hidden md:flex items-center space-x-1">
+                    <a href="#sle-device-display" class="nav-link px-4 py-2 rounded-lg hover:bg-dark-lighter transition-colors flex items-center">
+                        <i class="fa fa-info-circle mr-1"></i>设备信息
+                    </a>
+                    <a href="#sle-device-settings" class="nav-link px-4 py-2 rounded-lg hover:bg-dark-lighter transition-colors flex items-center">
+                        <i class="fa fa-cog mr-1"></i>设备设置
+                    </a>
+                    <a href="#sle-scenario-test" class="nav-link px-4 py-2 rounded-lg hover:bg-dark-lighter transition-colors flex items-center">
+                        <i class="fa fa-sitemap mr-1"></i>场景配置
+                    </a>
+                    <a href="#sle-firmware-upgrade" class="nav-link px-4 py-2 rounded-lg hover:bg-dark-lighter transition-colors flex items-center">
+                        <i class="fa fa-download mr-1"></i>软件升级
+                    </a>
+                </nav>
+
+                <button id="theme-toggle" aria-label="切换主题" class="hidden md:inline-flex items-center justify-center w-10 h-10 rounded-full bg-dark-lighter hover:bg-dark-lightest text-gray-300 transition-colors nav-shadow">
+                    <i id="theme-toggle-icon" class="fa fa-moon-o"></i>
+                </button>
+
+                <button id="mobile-menu-button" class="md:hidden text-gray-300 hover:text-white">
+                    <i class="fa fa-bars text-xl"></i>
+                </button>
+            </div>
+        </div>
+
+        <div id="mobile-menu" class="md:hidden hidden bg-dark-lighter">
+            <div class="container mx-auto px-4 py-2 flex flex-col space-y-1">
+                <a href="#sle-device-display" class="nav-link px-4 py-2 rounded-lg hover:bg-dark transition-colors flex items-center">
+                    <i class="fa fa-info-circle mr-1"></i>设备信息
+                </a>
+                <a href="#sle-device-settings" class="nav-link px-4 py-2 rounded-lg hover:bg-dark transition-colors flex items-center">
+                    <i class="fa fa-cog mr-1"></i>设备设置
+                </a>
+                <a href="#sle-scenario-test" class="nav-link px-4 py-2 rounded-lg hover:bg-dark transition-colors flex items-center">
+                    <i class="fa fa-sitemap mr-1"></i>场景配置
+                </a>
+                <a href="#sle-firmware-upgrade" class="nav-link px-4 py-2 rounded-lg hover:bg-dark transition-colors flex items-center">
+                    <i class="fa fa-download mr-1"></i>软件升级
+                </a>
+                <button id="theme-toggle-mobile" aria-label="切换主题" class="flex items-center space-x-2 px-4 py-2 rounded-lg hover:bg-dark transition-colors text-gray-300">
+                    <i id="theme-toggle-icon-mobile" class="fa fa-moon-o"></i>
+                    <span>切换主题</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- 左侧边栏：SLB / SLE 切换（当前页高亮 SLE） -->
+    <div class="fixed left-4 top-28 z-40 space-y-2 hidden md:block nav-shadow">
+        <a href="index.html" class="block px-3 py-2 rounded-lg bg-dark-lighter text-gray-200 hover:bg-dark-lightest transition-colors">SLB</a>
+        <a href="sle.html" class="block px-3 py-2 rounded-lg bg-primary text-white font-semibold">SLE</a>
+    </div>
+    <div class="fixed bottom-4 left-4 z-40 md:hidden nav-shadow">
+        <div class="flex bg-dark-lighter rounded-lg overflow-hidden border border-dark-lightest">
+            <a href="index.html" class="px-3 py-2 text-gray-200 hover:bg-dark-lightest transition-colors">SLB</a>
+            <a href="sle.html" class="px-3 py-2 bg-primary text-white font-semibold">SLE</a>
+        </div>
+    </div>
+
+    <main class="container mx-auto px-4 py-6 md:pl-24">
+        <div id="notification" class="fixed top-4 right-4 bg-dark-lighter border border-primary/50 rounded-lg p-4 shadow-lg transform translate-x-full transition-transform duration-300 z-50 max-w-sm">
+            <div class="flex items-start">
+                <div id="notification-icon" class="mr-3 mt-0.5">
+                    <i class="fa fa-check-circle text-green-400 text-xl"></i>
+                </div>
+                <div class="flex-1">
+                    <h3 id="notification-title" class="font-semibold text-white"></h3>
+                    <p id="notification-message" class="text-sm text-gray-300 mt-1"></p>
+                </div>
+                <button id="close-notification" class="text-gray-400 hover:text-white ml-2"><i class="fa fa-times"></i></button>
+            </div>
+        </div>
+
+        <section id="sle-device-display" class="page-section">
+            <h2 class="text-2xl font-bold mb-6 text-white flex items-center"><i class="fa fa-info-circle text-primary mr-2"></i>设备信息</h2>
+            <div id="sle-device-loading" class="hidden py-12 text-center">
+                <div class="loader inline-block w-8 h-8 border-4 rounded-full"></div>
+                <p class="mt-3 text-gray-400">正在加载设备信息...</p>
+            </div>
+            <div id="sle-device-error" class="hidden bg-dark-lighter border border-danger/30 rounded-lg p-4 mb-6">
+                <div class="flex items-start">
+                    <i class="fa fa-exclamation-triangle text-warning mt-0.5 mr-3"></i>
+                    <div>
+                        <p id="sle-error-message" class="text-gray-300"></p>
+                        <button id="sle-retry" class="mt-2 text-sm text-primary hover:text-primary/80"><i class="fa fa-refresh mr-1"></i>重试</button>
+                    </div>
+                </div>
+            </div>
+            <div id="sle-device-card" class="bg-dark-lighter rounded-xl p-6 card-shadow mb-6">
+                <div class="flex justify-between items-start mb-4">
+                    <h3 class="text-xl font-semibold text-white">基本信息</h3>
+                    <span id="sle-device-default" class="hidden text-xs px-2 py-1 bg-warning/20 text-warning rounded-full">默认数据</span>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <div class="bg-dark rounded-lg p-4"><p class="text-gray-400 text-sm mb-1">设备名称</p><p id="sle-device-name" class="text-white font-medium"></p></div>
+                    <div class="bg-dark rounded-lg p-4"><p class="text-gray-400 text-sm mb-1">设备类型</p><p id="sle-device-type" class="text-white font-medium"></p></div>
+                    <div class="bg-dark rounded-lg p-4"><p class="text-gray-400 text-sm mb-1">IP 地址</p><p id="sle-device-ip" class="text-white font-medium font-mono"></p></div>
+                    <div class="bg-dark rounded-lg p-4"><p class="text-gray-400 text-sm mb-1">信道</p><p id="sle-device-channel" class="text-white font-medium"></p></div>
+                    <div class="bg-dark rounded-lg p-4"><p class="text-gray-400 text-sm mb-1">物理带宽</p><p id="sle-device-bw" class="text-white font-medium"></p></div>
+                    <div class="bg-dark rounded-lg p-4"><p class="text-gray-400 text-sm mb-1">业务带宽</p><p id="sle-device-service-bw" class="text-white font-medium"></p></div>
+                    <div class="bg-dark rounded-lg p-4"><p class="text-gray-400 text-sm mb-1">固件版本</p><p id="sle-device-version" class="text-white font-medium"></p></div>
+                </div>
+            </div>
+
+            <!-- 连接设备列表（与 SLB 保持一致风格） -->
+            <div id="sle-connected-devices-card" class="bg-dark-lighter rounded-xl p-6 mb-6 card-shadow">
+                <div class="flex flex-wrap justify-between items-center mb-4 gap-3">
+                    <h3 class="text-xl font-semibold text-white">连接设备</h3>
+                    <div class="flex items-center space-x-3">
+                        <span id="sle-connected-devices-default" class="hidden text-xs px-2 py-1 bg-warning/20 text-warning rounded-full">使用默认数据</span>
+                        <div class="flex items-center space-x-2">
+                            <span class="text-sm text-gray-300">自动刷新</span>
+                            <label class="auto-refresh-switch">
+                                <input type="checkbox" id="sle-auto-refresh-toggle">
+                                <span class="auto-refresh-slider"></span>
+                            </label>
+                        </div>
+                        <button type="button" id="sle-manual-refresh" class="bg-primary hover:bg-primary/80 text-white px-5 py-2 rounded-lg transition-colors flex items-center">
+                            <i class="fa fa-refresh mr-2"></i>
+                            <span>手动扫描</span>
+                            <span id="sle-connected-loading" class="hidden ml-2"><div class="loader inline-block w-4 h-4 border-2 border-white rounded-full"></div></span>
+                        </button>
+                    </div>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full">
+                        <thead>
+                            <tr class="border-b border-dark">
+                                <th class="py-3 px-4 text-left text-gray-400 font-medium">设备名称</th>
+                                <th class="py-3 px-4 text-left text-gray-400 font-medium">类型</th>
+                                <th class="py-3 px-4 text-left text-gray-400 font-medium">IP 地址</th>
+                                <th class="py-3 px-4 text-left text-gray-400 font-medium">MAC 地址</th>
+                                <th class="py-3 px-4 text-left text-gray-400 font-medium">信号强度</th>
+                                <th class="py-3 px-4 text-left text-gray-400 font-medium">版本信息</th>
+                                <th class="py-3 px-4 text-left text-gray-400 font-medium">业务带宽</th>
+                            </tr>
+                        </thead>
+                        <tbody id="sle-connected-devices-table">
+                            <tr>
+                                <td colspan="7" class="py-4 px-4 text-center text-gray-400">暂无连接设备</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <section id="sle-device-settings" class="page-section hidden">
+            <h2 class="text-2xl font-bold mb-6 text-white flex items-center"><i class="fa fa-cog text-primary mr-2"></i>设备设置</h2>
+            <div class="bg-dark-lighter rounded-xl p-6 card-shadow">
+                <form id="sle-settings-form">
+                    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 mb-8">
+                        <div><label class="block text-sm font-medium text-gray-300 mb-1">设备名称</label><input id="sle-settings-name" type="text" class="w-full bg-dark border border-dark-lightest rounded-lg px-4 py-2 text-white" required></div>
+                        <div><label class="block text-sm font-medium text-gray-300 mb-1">IP 地址</label><input id="sle-settings-ip" type="text" class="w-full bg-dark border border-dark-lightest rounded-lg px-4 py-2 text-white font-mono" required></div>
+                        <div><label class="block text-sm font-medium text-gray-300 mb-1">信道</label><input id="sle-settings-channel" type="number" class="w-full bg-dark border border-dark-lightest rounded-lg px-4 py-2 text-white"></div>
+                        <div><label class="block text-sm font-medium text-gray-300 mb-1">物理带宽 (M)</label><input id="sle-settings-bw" type="number" class="w-full bg-dark border border-dark-lightest rounded-lg px-4 py-2 text-white"></div>
+                        <div><label class="block text-sm font-medium text-gray-300 mb-1">业务带宽 (M)</label><input id="sle-settings-service-bw" type="number" class="w-full bg-dark border border-dark-lightest rounded-lg px-4 py-2 text-white"></div>
+                    </div>
+                    <div class="flex justify-end">
+                        <button type="submit" class="bg-primary hover:bg-primary/80 text-white px-6 py-2 rounded-lg transition-colors flex items-center">
+                            <span>保存设置</span>
+                            <span id="sle-settings-loading" class="hidden ml-2"><div class="loader inline-block w-4 h-4 border-2 border-white rounded-full"></div></span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </section>
+
+        <section id="sle-scenario-test" class="page-section hidden">
+            <h2 class="text-2xl font-bold mb-6 text-white flex items-center"><i class="fa fa-sitemap text-primary mr-2"></i>场景配置</h2>
+            <div class="bg-dark-lighter rounded-xl p-6 card-shadow space-y-4">
+                <p class="text-gray-300">这里用于预设或调试常见场景，后续可接入与 SLB 一致的 API。</p>
+                <div class="flex flex-col lg:flex-row lg:items-center lg:space-x-4 space-y-3 lg:space-y-0">
+                    <button type="button" class="bg-primary hover:bg-primary/80 text-white px-5 py-2 rounded-lg transition-colors flex items-center justify-center w-full lg:w-auto">
+                        <i class="fa fa-play-circle mr-2"></i>启动场景测试
+                    </button>
+                    <div class="flex-1 grid grid-cols-1 md:grid-cols-2 gap-3 w-full">
+                        <input type="number" class="w-full bg-dark border border-dark-lightest rounded-lg px-4 py-2 text-white" placeholder="上行吞吐 (Mbps)">
+                        <input type="number" class="w-full bg-dark border border-dark-lightest rounded-lg px-4 py-2 text-white" placeholder="下行吞吐 (Mbps)">
+                    </div>
+                </div>
+                <div class="flex flex-wrap gap-3">
+                    <button type="button" class="bg-primary hover:bg-primary/80 text-white px-4 py-2 rounded-lg transition-colors">近距测试</button>
+                    <button type="button" class="bg-primary hover:bg-primary/80 text-white px-4 py-2 rounded-lg transition-colors">中距测试</button>
+                    <button type="button" class="bg-primary hover:bg-primary/80 text-white px-4 py-2 rounded-lg transition-colors">远距测试</button>
+                    <button type="button" class="bg-primary hover:bg-primary/80 text-white px-4 py-2 rounded-lg transition-colors">低功耗测试</button>
+                    <button type="button" class="bg-primary hover:bg-primary/80 text-white px-4 py-2 rounded-lg transition-colors">高功耗测试</button>
+                </div>
+            </div>
+        </section>
+
+        <section id="sle-firmware-upgrade" class="page-section hidden">
+            <h2 class="text-2xl font-bold mb-6 text-white flex items-center"><i class="fa fa-download text-primary mr-2"></i>软件升级</h2>
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div class="lg:col-span-2">
+                    <div class="bg-dark-lighter rounded-xl p-6 card-shadow">
+                        <h3 class="text-xl font-semibold text-white mb-4">手动上传固件</h3>
+                        <div class="bg-dark rounded-lg p-4">
+                            <div class="flex flex-col md:flex-row items-start md:items-center justify-between border border-dashed border-dark-lightest rounded-lg p-4 mb-4">
+                                <div>
+                                    <p class="text-gray-300 mb-1">支持 .bin 或 .fw 格式的固件文件</p>
+                                    <p id="sle-selected-file" class="text-sm text-gray-500">未选择文件</p>
+                                </div>
+                                <div class="mt-3 md:mt-0">
+                                    <label class="bg-primary/20 hover:bg-primary/30 text-primary px-4 py-2 rounded-lg transition-colors text-sm cursor-pointer inline-block">
+                                        <i class="fa fa-upload mr-1"></i>选择文件
+                                        <input type="file" id="sle-firmware-file" accept=".bin,.fw" class="hidden">
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="flex justify-end">
+                                <button id="sle-upload-button" class="bg-accent hover:bg-accent/80 text-white px-4 py-2 rounded-lg transition-colors text-sm flex items-center">
+                                    <i class="fa fa-cloud-upload mr-1"></i>上传固件
+                                    <span id="sle-upload-loading" class="hidden ml-2"><div class="loader inline-block w-4 h-4 border-2 border-white rounded-full"></div></span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="space-y-6">
+                    <div class="bg-dark-lighter rounded-xl p-6 card-shadow">
+                        <h3 class="text-xl font-semibold text-white mb-4">升级操作</h3>
+                        <div class="bg-dark rounded-lg p-4 space-y-4">
+                            <div class="p-4 bg-primary/10 border border-primary/20 rounded-lg">
+                                <p class="text-center text-gray-300 text-sm"><i class="fa fa-info-circle text-primary mr-1"></i>升级过程中设备将暂时无法使用，请勿断电</p>
+                            </div>
+                            <button id="sle-upgrade-button" class="w-full bg-primary hover:bg-primary/80 text-white px-4 py-3 rounded-lg transition-colors flex items-center justify-center">
+                                <i class="fa fa-refresh mr-2"></i>
+                                <span>升级到最新版本</span>
+                                <span id="sle-upgrade-loading" class="hidden ml-2"><div class="loader inline-block w-4 h-4 border-2 border-white rounded-full"></div></span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="sle-node-scan" class="page-section hidden">
+            <h2 class="text-2xl font-bold mb-6 text-white flex items-center"><i class="fa fa-search text-primary mr-2"></i>节点扫描</h2>
+            <div class="bg-dark-lighter rounded-xl p-6 card-shadow mb-6">
+                <div class="flex flex-wrap justify-between items-center mb-6">
+                    <h3 class="text-xl font-semibold text-white">附近的节点</h3>
+                    <button id="sle-scan-button" class="bg-primary hover:bg-primary/80 text-white px-4 py-2 rounded-lg transition-colors flex items-center mt-2 sm:mt-0">
+                        <i class="fa fa-refresh mr-1"></i>重新扫描
+                        <span id="sle-scan-loading" class="hidden ml-2"><div class="loader inline-block w-4 h-4 border-2 border-white rounded-full"></div></span>
+                    </button>
+                </div>
+                <div id="sle-scan-hint" class="hidden py-8 text-center text-gray-400"><i class="fa fa-info-circle mr-2"></i>未发现可用的节点</div>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full">
+                        <thead>
+                            <tr class="border-b border-dark">
+                                <th class="py-3 px-4 text-left text-gray-400 font-medium">节点索引</th>
+                                <th class="py-3 px-4 text-left text-gray-400 font-medium">节点名称</th>
+                                <th class="py-3 px-4 text-left text-gray-400 font-medium">信道</th>
+                                <th class="py-3 px-4 text-left text-gray-400 font-medium">信号强度</th>
+                                <th class="py-3 px-4 text-left text-gray-400 font-medium">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="sle-nodes-table"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="bg-dark mt-12 py-6 border-t border-dark-lightest">
+        <div class="container mx-auto px-4 text-center text-gray-500 text-sm">
+            <p class="inline-flex items-center gap-2">
+                <img src="logo_big.png" alt="微泰科技 Logo" class="h-6 w-auto" />
+                设备管理系统 &copy; 2025 webversion 微泰科技 版权所有
+            </p>
+        </div>
+    </footer>
+
+    <script src="js/sle.js"></script>
+</body>
+</html>

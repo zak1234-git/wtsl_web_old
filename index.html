@@ -214,7 +214,7 @@
                         <i class="fa fa-cog mr-1"></i>设备设置
                     </a>
                     <a href="#scenario-test" class="nav-link px-4 py-2 rounded-lg hover:bg-dark-lighter transition-colors">
-                        <i class="fa fa-sitemap mr-1"></i>场景测试
+                        <i class="fa fa-sitemap mr-1"></i>场景配置
                     </a>
                     <a href="#firmware-upgrade" class="nav-link px-4 py-2 rounded-lg hover:bg-dark-lighter transition-colors">
                         <i class="fa fa-download mr-1"></i>软件升级
@@ -246,7 +246,7 @@
                     <i class="fa fa-cog mr-1"></i>设备设置
                 </a>
                 <a href="#scenario-test" class="nav-link px-4 py-2 rounded-lg hover:bg-dark transition-colors">
-                    <i class="fa fa-sitemap mr-1"></i>场景测试
+                    <i class="fa fa-sitemap mr-1"></i>场景配置
                 </a>
                 <a href="#firmware-upgrade" class="nav-link px-4 py-2 rounded-lg hover:bg-dark transition-colors">
                     <i class="fa fa-download mr-1"></i>软件升级
@@ -262,9 +262,21 @@
             </div>
         </div>
     </header>
+    
+    <!-- 左侧边栏：SLB / SLE 切换 -->
+    <div class="fixed left-4 top-28 z-40 space-y-2 hidden md:block nav-shadow">
+        <a href="index.html" class="block px-3 py-2 rounded-lg bg-primary text-white font-semibold">SLB</a>
+        <a href="sle.html" class="block px-3 py-2 rounded-lg bg-dark-lighter text-gray-200 hover:bg-dark-lightest transition-colors">SLE</a>
+    </div>
+    <div class="fixed bottom-4 left-4 z-40 md:hidden nav-shadow">
+        <div class="flex bg-dark-lighter rounded-lg overflow-hidden border border-dark-lightest">
+            <a href="index.html" class="px-3 py-2 bg-primary text-white font-semibold">SLB</a>
+            <a href="sle.html" class="px-3 py-2 text-gray-200 hover:bg-dark-lightest transition-colors">SLE</a>
+        </div>
+    </div>
 
     <!-- 主内容区 -->
-    <main class="container mx-auto px-4 py-6">
+    <main class="container mx-auto px-4 py-6 md:pl-24">
         <!-- 通知提示 -->
         <div id="notification" class="fixed top-4 right-4 bg-dark-lighter border border-primary/50 rounded-lg p-4 shadow-lg transform translate-x-full transition-transform duration-300 z-50 max-w-sm">
             <div class="flex items-start">
@@ -597,10 +609,10 @@
             </div>
         </section>
 
-            <!-- 场景测试页面（独立页） -->
+            <!-- 场景配置页面（独立页） -->
             <section id="scenario-test" class="page-section hidden">
                 <h2 class="text-2xl font-bold mb-6 text-white flex items-center">
-                    <i class="fa fa-sitemap text-primary mr-2"></i>场景测试
+                    <i class="fa fa-sitemap text-primary mr-2"></i>场景配置
                 </h2>
 
                 <div class="bg-dark-lighter rounded-xl p-6 card-shadow space-y-4">
@@ -748,7 +760,10 @@
     <!-- 页脚 -->
     <footer class="bg-dark mt-12 py-6 border-t border-dark-lightest">
         <div class="container mx-auto px-4 text-center text-gray-500 text-sm">
-            <p>设备管理系统 &copy; 2025 webversion 微泰科技 版权所有</p>
+            <p class="inline-flex items-center gap-2">
+                <img src="logo_big.png" alt="微泰科技 Logo" class="h-6 w-auto" />
+                设备管理系统 &copy; 2025 v70_e524a3af 微泰科技 版权所有
+            </p>
         </div>
     </footer>
 
