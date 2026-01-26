@@ -199,9 +199,13 @@
     <!-- 顶部导航栏 -->
     <header class="bg-dark sticky top-0 z-50 nav-shadow">
         <div class="container mx-auto px-4 py-3 flex justify-between items-center">
-            <div class="flex items-center space-x-2">
+            <div class="flex items-center gap-3">
                 <i class="fa fa-server text-primary text-2xl"></i>
                 <h1 class="text-xl font-bold text-white">设备管理系统</h1>
+                <div class="flex items-center bg-dark-lighter border border-dark-lightest rounded-full overflow-hidden nav-shadow">
+                    <a href="index.html" class="px-3 py-2 bg-primary text-white font-semibold">SLB</a>
+                    <a href="sle.html" class="px-3 py-2 text-gray-200 hover:bg-dark-lightest transition-colors">SLE</a>
+                </div>
             </div>
 
             <div class="flex items-center space-x-3">
@@ -225,7 +229,7 @@
                     </a>
                 </nav>
 
-                <button id="theme-toggle" aria-label="切换主题" class="hidden md:inline-flex items-center justify-center w-10 h-10 rounded-full bg-dark-lighter hover:bg-dark-lightest text-gray-300 transition-colors nav-shadow">
+                <button id="theme-toggle" aria-label="切换主题" class="inline-flex items-center justify-center w-10 h-10 rounded-full bg-dark-lighter hover:bg-dark-lightest text-gray-300 transition-colors nav-shadow">
                     <i id="theme-toggle-icon" class="fa fa-moon-o"></i>
                 </button>
 
@@ -255,28 +259,12 @@
                 <a href="#node-scan" class="nav-link px-4 py-2 rounded-lg hover:bg-dark transition-colors hidden">
                     <i class="fa fa-search mr-1"></i>节点扫描
                 </a>
-                <button id="theme-toggle-mobile" aria-label="切换主题" class="flex items-center space-x-2 px-4 py-2 rounded-lg hover:bg-dark transition-colors text-gray-300">
-                    <i id="theme-toggle-icon-mobile" class="fa fa-moon-o"></i>
-                    <span>切换主题</span>
-                </button>
             </div>
         </div>
     </header>
-    
-    <!-- 左侧边栏：SLB / SLE 切换 -->
-    <div class="fixed left-4 top-28 z-40 space-y-2 hidden md:block nav-shadow">
-        <a href="index.html" class="block px-3 py-2 rounded-lg bg-primary text-white font-semibold">SLB</a>
-        <a href="sle.html" class="block px-3 py-2 rounded-lg bg-dark-lighter text-gray-200 hover:bg-dark-lightest transition-colors">SLE</a>
-    </div>
-    <div class="fixed bottom-4 left-4 z-40 md:hidden nav-shadow">
-        <div class="flex bg-dark-lighter rounded-lg overflow-hidden border border-dark-lightest">
-            <a href="index.html" class="px-3 py-2 bg-primary text-white font-semibold">SLB</a>
-            <a href="sle.html" class="px-3 py-2 text-gray-200 hover:bg-dark-lightest transition-colors">SLE</a>
-        </div>
-    </div>
 
     <!-- 主内容区 -->
-    <main class="container mx-auto px-4 py-6 md:pl-24">
+    <main class="container mx-auto px-4 py-6">
         <!-- 通知提示 -->
         <div id="notification" class="fixed top-4 right-4 bg-dark-lighter border border-primary/50 rounded-lg p-4 shadow-lg transform translate-x-full transition-transform duration-300 z-50 max-w-sm">
             <div class="flex items-start">

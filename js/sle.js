@@ -1,88 +1,70 @@
 // 独立的 SLE 管理脚本，不依赖主站 main.js
 const sleState = {
     themeKey: 'theme',
-    storageKey: 'sle-device-info',
-    currentPage: 'sle-device-display',
-    scanInterval: null
+    cacheKeys: {
+        basic: 'sle-basic-info',
+        connected: 'sle-connected-devices'
+    }
 };
 
-// API 配置（优先使用 config_sle.json，其次 config.json.sle，如果都缺失则保留 TODO）
+// API 配置：与 SLB 一致，仅在路径前添加 SLE 前缀
 let SLE_API_CONFIG = {
-    baseUrl: 'http://example.com',
+    baseUrl: 'http://localhost:8080',
     endpoints: {
-        deviceInfo: '/sle/device',
-        saveSettings: '/sle/device',
-        uploadFirmware: '/sle/firmware',
-        upgrade: '/sle/upgrade',
-        scan: '/sle/scan'
+        basicInfo: '/api/v1/nodes/0/SLE_basicinfo',
+        connected: '/api/v1/nodes/0/SLE_conninfo',
+        scan: '/api/v1/nodes/0/SLE_show_bss_info',
+        connect: '/api/v1/nodes/0/SLE_connect'
     },
-    token: ''
+    token: '',
+    timeout: 10000
 };
 
-// UI 引用统一收敛，便于后续维护/重构
+// 示例数据：便于演示 UI，接入真实接口后可直接删除
+const sleDemoData = {
+    basic: { name: 'SLE-DEV-01', address: '00:11:22:33:44:55' },
+    connected: [
+        { rssi: -52, address: 'AA:BB:CC:DD:EE:01' },
+        { rssi: -61, address: 'AA:BB:CC:DD:EE:02' }
+    ],
+    scan: [
+        { index: 1, rssi: -48, address: 'AA:BB:CC:DD:FF:10' },
+        { index: 2, rssi: -67, address: 'AA:BB:CC:DD:FF:11' },
+        { index: 3, rssi: -74, address: 'AA:BB:CC:DD:FF:12' }
+    ]
+};
+
+// UI 引用
 const sleRefs = {};
 
 const initSleRefs = () => {
-    sleRefs.navLinks = document.querySelectorAll('.nav-link');
-    sleRefs.sections = document.querySelectorAll('.page-section');
-    sleRefs.mobileMenuBtn = document.getElementById('mobile-menu-button');
-    sleRefs.mobileMenu = document.getElementById('mobile-menu');
     sleRefs.themeToggle = document.getElementById('theme-toggle');
     sleRefs.themeToggleIcon = document.getElementById('theme-toggle-icon');
-    sleRefs.themeToggleMobile = document.getElementById('theme-toggle-mobile');
-    sleRefs.themeToggleIconMobile = document.getElementById('theme-toggle-icon-mobile');
     sleRefs.notification = document.getElementById('notification');
     sleRefs.notificationTitle = document.getElementById('notification-title');
     sleRefs.notificationMessage = document.getElementById('notification-message');
     sleRefs.notificationIcon = document.getElementById('notification-icon');
     sleRefs.notificationClose = document.getElementById('close-notification');
 
-    sleRefs.deviceLoading = document.getElementById('sle-device-loading');
-    sleRefs.deviceError = document.getElementById('sle-device-error');
-    sleRefs.errorMessage = document.getElementById('sle-error-message');
-    sleRefs.retryBtn = document.getElementById('sle-retry');
-    sleRefs.deviceCard = document.getElementById('sle-device-card');
-    sleRefs.deviceDefault = document.getElementById('sle-device-default');
+    sleRefs.basicName = document.getElementById('sle-basic-name');
+    sleRefs.basicAddress = document.getElementById('sle-basic-address');
+    sleRefs.basicLoading = document.getElementById('sle-basic-loading');
 
-    sleRefs.deviceName = document.getElementById('sle-device-name');
-    sleRefs.deviceType = document.getElementById('sle-device-type');
-    sleRefs.deviceIp = document.getElementById('sle-device-ip');
-    sleRefs.deviceChannel = document.getElementById('sle-device-channel');
-    sleRefs.deviceBw = document.getElementById('sle-device-bw');
-    sleRefs.deviceServiceBw = document.getElementById('sle-device-service-bw');
-    sleRefs.deviceVersion = document.getElementById('sle-device-version');
+    sleRefs.connectedTable = document.getElementById('sle-connected-table');
+    sleRefs.connectedLoading = document.getElementById('sle-connected-loading');
 
-    sleRefs.settingsForm = document.getElementById('sle-settings-form');
-    sleRefs.settingsName = document.getElementById('sle-settings-name');
-    sleRefs.settingsIp = document.getElementById('sle-settings-ip');
-    sleRefs.settingsChannel = document.getElementById('sle-settings-channel');
-    sleRefs.settingsBw = document.getElementById('sle-settings-bw');
-    sleRefs.settingsServiceBw = document.getElementById('sle-settings-service-bw');
-    sleRefs.settingsLoading = document.getElementById('sle-settings-loading');
-
-    sleRefs.firmwareFile = document.getElementById('sle-firmware-file');
-    sleRefs.selectedFile = document.getElementById('sle-selected-file');
-    sleRefs.uploadButton = document.getElementById('sle-upload-button');
-    sleRefs.uploadLoading = document.getElementById('sle-upload-loading');
-    sleRefs.upgradeButton = document.getElementById('sle-upgrade-button');
-    sleRefs.upgradeLoading = document.getElementById('sle-upgrade-loading');
-
+    sleRefs.scanTable = document.getElementById('sle-scan-table');
     sleRefs.scanButton = document.getElementById('sle-scan-button');
     sleRefs.scanLoading = document.getElementById('sle-scan-loading');
-    sleRefs.scanHint = document.getElementById('sle-scan-hint');
-    sleRefs.nodesTable = document.getElementById('sle-nodes-table');
 };
 
-// 主题 -----------------------------------------------------------------
+// 主题 ---------------------------------------------------------------
 const applyTheme = (nextTheme) => {
     document.documentElement.setAttribute('data-theme', nextTheme);
     localStorage.setItem(sleState.themeKey, nextTheme);
     const isLight = nextTheme === 'light';
     if (sleRefs.themeToggleIcon) {
         sleRefs.themeToggleIcon.className = isLight ? 'fa fa-sun-o' : 'fa fa-moon-o';
-    }
-    if (sleRefs.themeToggleIconMobile) {
-        sleRefs.themeToggleIconMobile.className = isLight ? 'fa fa-sun-o' : 'fa fa-moon-o';
     }
 };
 
@@ -98,7 +80,7 @@ const handleThemeToggle = () => {
     applyTheme(next);
 };
 
-// 通知 -----------------------------------------------------------------
+// 通知 ---------------------------------------------------------------
 const showNotification = (title, message, type = 'info') => {
     const iconMap = {
         success: '<i class="fa fa-check-circle text-green-400 text-xl"></i>',
@@ -116,244 +98,211 @@ const showNotification = (title, message, type = 'info') => {
 
 const hideNotification = () => sleRefs.notification?.classList.add('translate-x-full');
 
-// 页面切换 -------------------------------------------------------------
-const switchPage = (pageId) => {
-    sleRefs.sections?.forEach((section) => {
-        if (section.id === pageId) {
-            section.classList.remove('hidden');
-            section.classList.add('content-auto');
-        } else {
-            section.classList.add('hidden');
-        }
-    });
-    sleRefs.navLinks?.forEach((link) => {
-        if (link.getAttribute('href') === `#${pageId}`) {
-            link.classList.add('bg-primary/20', 'text-primary');
-        } else {
-            link.classList.remove('bg-primary/20', 'text-primary');
-        }
-    });
-    sleState.currentPage = pageId;
-};
-
-// API 配置加载 ---------------------------------------------------------
+// API 配置加载 -------------------------------------------------------
 const loadSleApiConfig = async () => {
-    const candidates = ['config_sle.json', 'config.json.sle'];
+    const candidates = ['config_sle.json', 'config.json.sle', 'config.json'];
     for (const file of candidates) {
         try {
             const res = await fetch(file, { cache: 'no-store' });
             if (!res.ok) continue;
             const data = await res.json();
+            const ip = data.serverip || data.ip || 'localhost';
+            const port = data.port || data.serverport || '8080';
+            const baseUrl = data.baseUrl || `http://${ip}:${port}`;
             SLE_API_CONFIG = {
-                baseUrl: data.baseUrl || SLE_API_CONFIG.baseUrl,
-                endpoints: { ...SLE_API_CONFIG.endpoints, ...(data.endpoints || {}) },
+                ...SLE_API_CONFIG,
+                baseUrl,
                 token: data.token || ''
             };
             return;
         } catch (err) {
-            // 忽略错误，尝试下一个
+            // 继续尝试下一个
         }
     }
-    // 未找到配置文件，保持默认占位，提醒开发者
-    console.warn('SLE 配置文件缺失，使用占位符地址。');
+    console.warn('SLE 配置文件缺失，使用占位符地址');
 };
 
 const buildSleUrl = (key) => `${SLE_API_CONFIG.baseUrl}${SLE_API_CONFIG.endpoints[key] || ''}`;
 
-// 数据填充 -------------------------------------------------------------
-const populateSleDevice = (payload, isDefault = false) => {
-    if (!sleRefs.deviceName) return;
-    sleRefs.deviceName.textContent = payload?.name || '--';
-    sleRefs.deviceType.textContent = payload?.type || '--';
-    sleRefs.deviceIp.textContent = payload?.ip || '--';
-    sleRefs.deviceChannel.textContent = payload?.channel ?? '--';
-    sleRefs.deviceBw.textContent = payload?.bw ?? '--';
-    sleRefs.deviceServiceBw.textContent = payload?.serviceBw ?? '--';
-    sleRefs.deviceVersion.textContent = payload?.version || '--';
-    sleRefs.deviceDefault.classList.toggle('hidden', !isDefault);
+// 数据填充 -----------------------------------------------------------
+const renderBasicInfo = (payload = {}) => {
+    if (sleRefs.basicName) sleRefs.basicName.textContent = payload.name || '--';
+    if (sleRefs.basicAddress) sleRefs.basicAddress.textContent = payload.address || payload.ip || '--';
 };
 
-// SLE 设备信息获取（支持失败回退到缓存） --------------------------------
-const fetchSleDeviceInfo = async () => {
-    sleRefs.deviceLoading?.classList.remove('hidden');
-    sleRefs.deviceError?.classList.add('hidden');
-    sleRefs.deviceCard?.classList.add('opacity-50');
+const renderConnectedDevices = (list = []) => {
+    if (!sleRefs.connectedTable) return;
+    if (!Array.isArray(list) || list.length === 0) {
+        sleRefs.connectedTable.innerHTML = '<tr><td colspan="2" class="py-4 px-4 text-center text-gray-400">暂无连接设备</td></tr>';
+        return;
+    }
+    sleRefs.connectedTable.innerHTML = list.map((item) => {
+        const rssi = item.rssi ?? item.signal ?? '--';
+        const addr = item.mac || item.address || item.ip || '--';
+        return `<tr class="border-b border-dark">
+            <td class="py-3 px-4 text-gray-300">${rssi}</td>
+            <td class="py-3 px-4 text-gray-300">${addr}</td>
+        </tr>`;
+    }).join('');
+};
+
+const renderScanResults = (list = []) => {
+    if (!sleRefs.scanTable) return;
+    if (!Array.isArray(list) || list.length === 0) {
+        sleRefs.scanTable.innerHTML = '<tr><td colspan="3" class="py-4 px-4 text-center text-gray-400">尚未扫描到设备</td></tr>';
+        return;
+    }
+    sleRefs.scanTable.innerHTML = list.map((item, idx) => {
+        const rssi = item.rssi ?? item.signal ?? '--';
+        const addr = item.mac || item.address || item.ip || '--';
+        const index = item.index ?? idx;
+        return `<tr class="border-b border-dark">
+            <td class="py-3 px-4 text-gray-300">${rssi}</td>
+            <td class="py-3 px-4 text-gray-300">${addr}</td>
+            <td class="py-3 px-4 text-right">
+                <button class="sle-connect-btn bg-primary hover:bg-primary/80 text-white px-3 py-1 rounded-lg text-sm" data-index="${index}" data-address="${addr}" data-name="${addr}">
+                    <i class="fa fa-link mr-1"></i>连接
+                </button>
+            </td>
+        </tr>`;
+    }).join('');
+    bindConnectButtons();
+};
+
+// 请求逻辑 -----------------------------------------------------------
+const fetchBasicInfo = async () => {
+    sleRefs.basicLoading?.classList.remove('hidden');
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), SLE_API_CONFIG.timeout);
     try {
-        const res = await fetch(buildSleUrl('deviceInfo'), {
+        const res = await fetch(buildSleUrl('basicInfo'), {
+            signal: controller.signal,
             headers: SLE_API_CONFIG.token ? { Authorization: `Bearer ${SLE_API_CONFIG.token}` } : {}
         });
-        if (!res.ok) throw new Error(`请求失败：${res.status}`);
+        if (!res.ok) throw new Error(`获取基本信息失败：${res.status}`);
         const data = await res.json();
-        populateSleDevice(data, false);
-        localStorage.setItem(sleState.storageKey, JSON.stringify(data));
-    } catch (err) {
-        const cached = localStorage.getItem(sleState.storageKey);
-        if (cached) {
-            populateSleDevice(JSON.parse(cached), true);
-            showNotification('离线数据', '当前使用本地缓存数据', 'warning');
-        } else {
-            sleRefs.deviceError?.classList.remove('hidden');
-            if (sleRefs.errorMessage) sleRefs.errorMessage.textContent = err.message || '获取设备信息失败';
+        // 检查数据有效性（如果只有 status 字段说明是错误响应）
+        const payload = data.data || data;
+        if (!payload.name && !payload.address && data.status === 'Failed') {
+            throw new Error('API 返回错误响应');
         }
+        renderBasicInfo(payload);
+        localStorage.setItem(sleState.cacheKeys.basic, JSON.stringify(payload));
+    } catch (err) {
+        console.error('[SLE] 获取基本信息异常：', err.message);
+        renderBasicInfo(sleDemoData.basic);
+        showNotification('示例数据', '无法连接API，当前展示示例数据', 'info');
     } finally {
-        sleRefs.deviceLoading?.classList.add('hidden');
-        sleRefs.deviceCard?.classList.remove('opacity-50');
+        clearTimeout(timeoutId);
+        sleRefs.basicLoading?.classList.add('hidden');
     }
 };
 
-// 保存设置 -------------------------------------------------------------
-const handleSleSaveSettings = async (event) => {
-    event.preventDefault();
-    sleRefs.settingsLoading?.classList.remove('hidden');
-    const payload = {
-        name: sleRefs.settingsName?.value.trim(),
-        ip: sleRefs.settingsIp?.value.trim(),
-        channel: Number(sleRefs.settingsChannel?.value) || 0,
-        bw: Number(sleRefs.settingsBw?.value) || 0,
-        serviceBw: Number(sleRefs.settingsServiceBw?.value) || 0
-    };
+const fetchConnectedDevices = async () => {
+    sleRefs.connectedLoading?.classList.remove('hidden');
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), SLE_API_CONFIG.timeout);
     try {
-        const res = await fetch(buildSleUrl('saveSettings'), {
+        const res = await fetch(buildSleUrl('connected'), {
+            signal: controller.signal,
+            headers: SLE_API_CONFIG.token ? { Authorization: `Bearer ${SLE_API_CONFIG.token}` } : {}
+        });
+        if (!res.ok) throw new Error(`获取连接设备失败：${res.status}`);
+        const data = await res.json();
+        const list = data.data || data.devices || data.list || [];
+        // 检查列表是否为空或无效，如果为空则当作错误处理
+        if (!Array.isArray(list) || (list.length === 0 && data.status === 'Failed')) {
+            throw new Error('API 返回空结果或错误响应');
+        }
+        renderConnectedDevices(list);
+        localStorage.setItem(sleState.cacheKeys.connected, JSON.stringify(list));
+    } catch (err) {
+        console.error('[SLE] 获取连接设备异常：', err.message);
+        renderConnectedDevices(sleDemoData.connected);
+        showNotification('示例数据', '无法连接API，当前展示示例数据', 'info');
+    } finally {
+        clearTimeout(timeoutId);
+        sleRefs.connectedLoading?.classList.add('hidden');
+    }
+};
+
+const fetchScanResults = async () => {
+    sleRefs.scanButton?.setAttribute('disabled', 'true');
+    sleRefs.scanLoading?.classList.remove('hidden');
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), SLE_API_CONFIG.timeout);
+    try {
+        const res = await fetch(buildSleUrl('scan'), {
+            signal: controller.signal,
+            headers: SLE_API_CONFIG.token ? { Authorization: `Bearer ${SLE_API_CONFIG.token}` } : {}
+        });
+        if (!res.ok) throw new Error(`扫描失败：${res.status}`);
+        const data = await res.json();
+        const list = data.data || data.nodes || data.list || [];
+        renderScanResults(list.length ? list : sleDemoData.scan);
+    } catch (err) {
+        renderScanResults(sleDemoData.scan);
+        showNotification('示例数据', '当前展示扫描示例数据，API接入后移除', 'info');
+    } finally {
+        clearTimeout(timeoutId);
+        sleRefs.scanLoading?.classList.add('hidden');
+        sleRefs.scanButton?.removeAttribute('disabled');
+    }
+};
+
+const handleConnect = async (index, address, name) => {
+    try {
+        const res = await fetch(buildSleUrl('connect'), {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 ...(SLE_API_CONFIG.token ? { Authorization: `Bearer ${SLE_API_CONFIG.token}` } : {})
             },
-            body: JSON.stringify(payload)
+            body: JSON.stringify({ index, address, name })
         });
-        if (!res.ok) throw new Error(`保存失败：${res.status}`);
-        showNotification('已保存', '设备设置已提交', 'success');
-    } catch (err) {
-        showNotification('保存失败', err.message || '提交设备设置失败', 'error');
-    } finally {
-        sleRefs.settingsLoading?.classList.add('hidden');
-    }
-};
-
-// 固件上传 -------------------------------------------------------------
-const handleSleFileChange = () => {
-    const file = sleRefs.firmwareFile?.files?.[0];
-    if (sleRefs.selectedFile) sleRefs.selectedFile.textContent = file ? file.name : '未选择文件';
-};
-
-const handleSleUpload = async () => {
-    const file = sleRefs.firmwareFile?.files?.[0];
-    if (!file) {
-        showNotification('请选择文件', '请先选择固件文件', 'warning');
-        return;
-    }
-    const formData = new FormData();
-    formData.append('file', file);
-    sleRefs.uploadLoading?.classList.remove('hidden');
-    try {
-        const res = await fetch(buildSleUrl('uploadFirmware'), {
-            method: 'POST',
-            headers: SLE_API_CONFIG.token ? { Authorization: `Bearer ${SLE_API_CONFIG.token}` } : {},
-            body: formData
-        });
-        if (!res.ok) throw new Error(`上传失败：${res.status}`);
-        showNotification('上传成功', '固件已上传，准备升级', 'success');
-    } catch (err) {
-        showNotification('上传失败', err.message || '固件上传失败', 'error');
-    } finally {
-        sleRefs.uploadLoading?.classList.add('hidden');
-    }
-};
-
-const handleSleUpgrade = async () => {
-    sleRefs.upgradeLoading?.classList.remove('hidden');
-    try {
-        const res = await fetch(buildSleUrl('upgrade'), {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                ...(SLE_API_CONFIG.token ? { Authorization: `Bearer ${SLE_API_CONFIG.token}` } : {})
-            }
-        });
-        if (!res.ok) throw new Error(`升级指令失败：${res.status}`);
-        showNotification('升级指令已下发', '请等待设备完成升级', 'info');
-    } catch (err) {
-        showNotification('升级失败', err.message || '升级指令发送失败', 'error');
-    } finally {
-        sleRefs.upgradeLoading?.classList.add('hidden');
-    }
-};
-
-// 扫描 ---------------------------------------------------------------
-const renderSleNodes = (list) => {
-    if (!Array.isArray(list) || list.length === 0) {
-        if (sleRefs.nodesTable) sleRefs.nodesTable.innerHTML = '';
-        sleRefs.scanHint?.classList.remove('hidden');
-        return;
-    }
-    sleRefs.scanHint?.classList.add('hidden');
-    if (!sleRefs.nodesTable) return;
-    sleRefs.nodesTable.innerHTML = list.map((node, idx) => {
-        return `<tr class="border-b border-dark hover:bg-dark">
-            <td class="py-3 px-4 text-gray-300">${node.index ?? idx}</td>
-            <td class="py-3 px-4 text-gray-300">${node.name || '--'}</td>
-            <td class="py-3 px-4 text-gray-300">${node.channel ?? '--'}</td>
-            <td class="py-3 px-4 text-gray-300">${node.rssi ?? '--'}</td>
-            <td class="py-3 px-4 text-gray-300">
-                <button class="bg-primary/20 hover:bg-primary/30 text-primary px-3 py-1 rounded-lg text-sm">连接</button>
-            </td>
-        </tr>`;
-    }).join('');
-};
-
-const handleSleScan = async () => {
-    sleRefs.scanLoading?.classList.remove('hidden');
-    try {
-        const res = await fetch(buildSleUrl('scan'), {
-            headers: SLE_API_CONFIG.token ? { Authorization: `Bearer ${SLE_API_CONFIG.token}` } : {}
-        });
-        if (!res.ok) throw new Error(`扫描失败：${res.status}`);
+        if (!res.ok) throw new Error(`连接失败：${res.status}`);
         const data = await res.json();
-        renderSleNodes(data?.nodes || []);
+        const success = data.status !== false;
+        if (!success) throw new Error(data.message || '连接指令执行失败');
+        showNotification('连接成功', `已连接到设备 ${name || index}`, 'success');
+        await fetchConnectedDevices();
     } catch (err) {
-        showNotification('扫描失败', err.message || '无法获取扫描结果', 'error');
-    } finally {
-        sleRefs.scanLoading?.classList.add('hidden');
+        showNotification('连接失败', err.message || '无法下发连接指令', 'error');
     }
 };
 
-// 事件绑定 -------------------------------------------------------------
-const bindSleEvents = () => {
-    sleRefs.navLinks?.forEach((link) => {
-        link.addEventListener('click', (e) => {
-            e.preventDefault();
-            const target = link.getAttribute('href').replace('#', '');
-            switchPage(target);
-            sleRefs.mobileMenu?.classList.add('hidden');
+// 事件绑定 -----------------------------------------------------------
+const bindConnectButtons = () => {
+    const buttons = document.querySelectorAll('.sle-connect-btn');
+    buttons.forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const index = btn.getAttribute('data-index');
+            const address = btn.getAttribute('data-address');
+            const name = btn.getAttribute('data-name');
+            handleConnect(index, address, name);
         });
     });
-
-    sleRefs.mobileMenuBtn?.addEventListener('click', () => sleRefs.mobileMenu?.classList.toggle('hidden'));
-
-    sleRefs.themeToggle?.addEventListener('click', handleThemeToggle);
-    sleRefs.themeToggleMobile?.addEventListener('click', handleThemeToggle);
-    sleRefs.notificationClose?.addEventListener('click', hideNotification);
-
-    sleRefs.retryBtn?.addEventListener('click', fetchSleDeviceInfo);
-    sleRefs.settingsForm?.addEventListener('submit', handleSleSaveSettings);
-
-    sleRefs.firmwareFile?.addEventListener('change', handleSleFileChange);
-    sleRefs.uploadButton?.addEventListener('click', handleSleUpload);
-    sleRefs.upgradeButton?.addEventListener('click', handleSleUpgrade);
-
-    sleRefs.scanButton?.addEventListener('click', handleSleScan);
 };
 
-// 初始化 ---------------------------------------------------------------
+const bindSleEvents = () => {
+    sleRefs.themeToggle?.addEventListener('click', handleThemeToggle);
+    sleRefs.notificationClose?.addEventListener('click', hideNotification);
+    sleRefs.scanButton?.addEventListener('click', fetchScanResults);
+};
+
+// 初始化 -------------------------------------------------------------
 const initSlePage = async () => {
     initSleRefs();
     bindSleEvents();
     initTheme();
-    switchPage('sle-device-display');
     await loadSleApiConfig();
-    await fetchSleDeviceInfo();
-    // 默认开启一次扫描，后续如需轮询可在此设置 setInterval
-    await handleSleScan();
+    await Promise.all([fetchBasicInfo(), fetchConnectedDevices()]);
+    await fetchScanResults();
 };
 
- initSlePage();
+// 等待 DOM 完全加载后再执行
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initSlePage);
+} else {
+    initSlePage();
+}
