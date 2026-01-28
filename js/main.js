@@ -23,6 +23,10 @@ function setAdvApiConfig(ip, port, token = '', timeout = 10000) {
     ADV_API_CONFIG = {
         getAdvInfoUrl: `http://${ip}:${port}/api/v1/nodes/0/advinfo`,
         setAdvInfoUrl: `http://${ip}:${port}/api/v1/nodes/0/advinfo`,
+        throughputTestUrl: `http://${ip}:${port}/api/v1/nodes/0/throughput_test`,
+        shortRangeTestUrl: `http://${ip}:${port}/api/v1/nodes/0/shortrange_test`,
+        remoteRangeTestUrl: `http://${ip}:${port}/api/v1/nodes/0/remoterange_test`,
+        lowPowerTestUrl: `http://${ip}:${port}/api/v1/nodes/0/lowpow_test`,
         token: token || '',
         timeout: timeout || 10000
     };
@@ -230,13 +234,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                 // 场景测试元素
                 throughputTestBtn: document.getElementById('throughput-test-btn'),
-                throughputUp: document.getElementById('throughput-up'),
-                throughputDown: document.getElementById('throughput-down'),
                 nearTestBtn: document.getElementById('near-test-btn'),
-                midTestBtn: document.getElementById('mid-test-btn'),
                 farTestBtn: document.getElementById('far-test-btn'),
                 lowPowerTestBtn: document.getElementById('low-power-test-btn'),
-                highPowerTestBtn: document.getElementById('high-power-test-btn'),
 
                 // 高级参数表单元素
                 cpTypeSelect: document.getElementById('settings-cp-type'),
@@ -590,13 +590,19 @@ function setupEventListeners() {
     elements.cpTypeSelect?.addEventListener('change', () => updateSymbolTypeOptions());
     elements.sCfgIdxSelect?.addEventListener('change', () => updateSymbolTypeOptions());
 
-    // 场景测试
-    elements.throughputTestBtn?.addEventListener('click', handleThroughputTest);
-    elements.nearTestBtn?.addEventListener('click', () => handleScenarioTest('近距测试'));
-    elements.midTestBtn?.addEventListener('click', () => handleScenarioTest('中距测试'));
-    elements.farTestBtn?.addEventListener('click', () => handleScenarioTest('远距测试'));
-    elements.lowPowerTestBtn?.addEventListener('click', () => handleScenarioTest('低功耗测试'));
-    elements.highPowerTestBtn?.addEventListener('click', () => handleScenarioTest('高功耗测试'));
+    // 场景测试（仅保留四个）
+    elements.throughputTestBtn?.addEventListener('click', () => {
+        postScenarioTest(ADV_API_CONFIG.throughputTestUrl, '吞吐量峰值测试', elements.throughputTestBtn);
+    });
+    elements.nearTestBtn?.addEventListener('click', () => {
+        postScenarioTest(ADV_API_CONFIG.shortRangeTestUrl, '近距测试', elements.nearTestBtn);
+    });
+    elements.farTestBtn?.addEventListener('click', () => {
+        postScenarioTest(ADV_API_CONFIG.remoteRangeTestUrl, '远距测试', elements.farTestBtn);
+    });
+    elements.lowPowerTestBtn?.addEventListener('click', () => {
+        postScenarioTest(ADV_API_CONFIG.lowPowerTestUrl, '低功耗测试', elements.lowPowerTestBtn);
+    });
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
@@ -2154,29 +2160,70 @@ async function handleSaveAdvancedSettings() {
     }
 }
 
-// 吞吐量峰值测试（前端占位模拟）
-function handleThroughputTest() {
-    const btn = elements.throughputTestBtn;
-    if (!btn) return;
+// 场景测试：真实POST请求，带开发者确认提示
+async function postScenarioTest(apiUrl, label, buttonEl) {
+    if (!apiUrl) {
+        showNotification('场景测试', `${label} API未配置`, true);
+        return;
+    }
 
-    const prevLabel = btn.innerHTML;
-    btn.disabled = true;
-    btn.innerHTML = '<i class="fa fa-spinner fa-spin mr-2"></i>测试中...';
+    const btn = buttonEl || null;
+    const prevLabel = btn ? btn.innerHTML : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa fa-spinner fa-spin mr-2"></i>测试中...';
+    }
 
-    if (elements.throughputUp) elements.throughputUp.value = '测试中...';
-    if (elements.throughputDown) elements.throughputDown.value = '测试中...';
+    console.info(`[场景测试] 发送POST请求: ${label} -> ${apiUrl}`);
 
-    setTimeout(() => {
-        if (elements.throughputUp) elements.throughputUp.value = '186.4';
-        if (elements.throughputDown) elements.throughputDown.value = '172.9';
-        btn.disabled = false;
-        btn.innerHTML = prevLabel;
-        showNotification('场景测试', '吞吐量峰值测试已触发，等待后端结果', false);
-    }, 1200);
-}
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), ADV_API_CONFIG.timeout || 10000);
 
-function handleScenarioTest(label) {
-    showNotification('场景测试', `${label} 已触发，等待后端结果`, false);
+    try {
+        const response = await fetch(apiUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({}),
+            signal: controller.signal
+        });
+
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+            throw new Error(`HTTP错误: ${response.status} ${response.statusText}`);
+        }
+
+        let result = null;
+        try {
+            result = await response.json();
+        } catch (err) {
+            result = null;
+        }
+
+        if (result && result.status !== undefined) {
+            const statusValue = String(result.status).toLowerCase();
+            const ok = statusValue === 'true' || statusValue === 'success';
+            if (!ok) {
+                throw new Error(result.message || `后端返回失败状态: ${result.status}`);
+            }
+        }
+
+        console.info(`[场景测试] 请求成功: ${label}`, result || '无返回体');
+        showNotification('场景测试', `${label} 请求成功`, false);
+    } catch (error) {
+        const errMsg = error.name === 'AbortError'
+            ? `请求超时（${(ADV_API_CONFIG.timeout || 10000) / 1000}秒）`
+            : `请求失败：${error.message}`;
+        console.error(`[场景测试] 请求失败: ${label}`, error);
+        showNotification('场景测试', `${label} ${errMsg}`, true);
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = prevLabel;
+        }
+    }
 }
 
 //扫描附近的G节点

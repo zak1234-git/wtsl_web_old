@@ -12,8 +12,8 @@ let SLE_API_CONFIG = {
     baseUrl: 'http://localhost:8080',
     endpoints: {
         basicInfo: '/api/v1/nodes/0/sle_basicinfo',
-        connected: '/api/v1/nodes/0/sle_scan',
-        scan: '/api/v1/nodes/0/sle_show_bss',
+        connected: '', // 暂无已连接设备查询接口
+        scan: '/api/v1/nodes/0/sle_scan', // 扫描信息与已连接设备共用 sle_scan
         connect: '/api/v1/nodes/0/sle_connect'
     },
     token: '',
@@ -37,6 +37,28 @@ const sleDemoData = {
 
 // 基本信息临时占位数据（接口未就绪时使用）
 const sleBasicMock = { name: 'SLE-DEV-01', mac: 'b:b:b:b:80:1' };
+
+// 已连接设备：从会话缓存恢复（切换页面保留，关闭标签页自动清空）
+const loadCachedConnections = () => {
+    try {
+        const raw = sessionStorage.getItem(sleState.cacheKeys.connected);
+        const data = raw ? JSON.parse(raw) : [];
+        return Array.isArray(data) ? data : [];
+    } catch (err) {
+        return [];
+    }
+};
+
+const saveCachedConnections = () => {
+    try {
+        sessionStorage.setItem(sleState.cacheKeys.connected, JSON.stringify(sleLocalConnections));
+    } catch (err) {
+        // 忽略缓存写入错误
+    }
+};
+
+// 本地维护的“已连接设备”列表（无查询接口，仅在点击连接后添加）
+const sleLocalConnections = loadCachedConnections();
 
 // UI 引用（集中获取，避免重复查询 DOM）
 const sleRefs = {};
@@ -162,14 +184,14 @@ const renderScanResults = (list = []) => {
     }
     // 构造扫描结果行并为每行预置连接按钮数据属性
     sleRefs.scanTable.innerHTML = list.map((item, idx) => {
-        const rssi = item.rssi ?? item.signal ?? '--';
+        const rssi = item.rssi ?? item.signal ?? '--'; // 信号强度
         const mac = item.mac || item.address || item.ip || '--';
         const index = item.index ?? idx;
         return `<tr class="border-b border-dark">
             <td class="py-3 px-4 text-gray-300">${rssi}</td>
             <td class="py-3 px-4 text-gray-300">${mac}</td>
             <td class="py-3 px-4 text-right">
-                <button class="sle-connect-btn bg-primary hover:bg-primary/80 text-white px-3 py-1 rounded-lg text-sm" data-index="${index}" data-mac="${mac}" data-name="${mac}">
+                <button class="sle-connect-btn bg-primary hover:bg-primary/80 text-white px-3 py-1 rounded-lg text-sm" data-index="${index}" data-mac="${mac}" data-name="${mac}" data-rssi="${rssi}">
                     <i class="fa fa-link mr-1"></i>连接
                 </button>
             </td>
@@ -219,28 +241,10 @@ const fetchBasicInfo = async () => {
 // 请求：已连接设备列表，失败时清空并提示
 const fetchConnectedDevices = async () => {
     sleRefs.connectedLoading?.classList.remove('hidden');
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), SLE_API_CONFIG.timeout);
     try {
-        const res = await fetch(buildSleUrl('connected'), {
-            signal: controller.signal,
-            headers: SLE_API_CONFIG.token ? { Authorization: `Bearer ${SLE_API_CONFIG.token}` } : {}
-        });
-        if (!res.ok) throw new Error(`获取连接设备失败：${res.status}`);
-        const data = await res.json();
-        const list = data.data || data.devices || data.list || [];
-        // 检查列表是否为空或无效，如果为空则当作错误处理
-        if (!Array.isArray(list) || (data.status && data.status !== 'success')) {
-            throw new Error('API 返回空结果或错误响应');
-        }
-        renderConnectedDevices(list);
-        localStorage.setItem(sleState.cacheKeys.connected, JSON.stringify(list));
-    } catch (err) {
-        console.error('[SLE] 获取连接设备异常：', err.message);
-        renderConnectedDevices([]);
-        showNotification('获取失败', '无法获取连接设备列表，请检查接口或网络', 'error');
+        // 渲染本地列表
+        renderConnectedDevices(sleLocalConnections);
     } finally {
-        clearTimeout(timeoutId);
         sleRefs.connectedLoading?.classList.add('hidden');
     }
 };
@@ -249,21 +253,22 @@ const fetchConnectedDevices = async () => {
 const fetchScanResults = async () => {
     sleRefs.scanButton?.setAttribute('disabled', 'true');
     sleRefs.scanLoading?.classList.remove('hidden');
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), SLE_API_CONFIG.timeout);
+    const controller = new AbortController(); // 控制请求取消
+    const timeoutId = setTimeout(() => controller.abort(), SLE_API_CONFIG.timeout); // 请求超时定时器
     try {
         const res = await fetch(buildSleUrl('scan'), {
             signal: controller.signal,
             headers: SLE_API_CONFIG.token ? { Authorization: `Bearer ${SLE_API_CONFIG.token}` } : {}
         });
         if (!res.ok) throw new Error(`扫描失败：${res.status}`);
-        const data = await res.json();
-        const list = data.data || data.nodes || data.list || [];
+        const data = await res.json(); // 响应主体
+        const list = data.data || data.nodes || data.list || []; // 通用列表字段兼容
         // 校验返回结构，status 非 success 或列表不是数组则视为失败
         if (!Array.isArray(list) || (data.status && data.status !== 'success')) {
             throw new Error('API 返回空结果或错误响应');
         }
         renderScanResults(list);
+        showNotification('扫描完成', `已获取 ${list.length} 个设备`, 'success');
     } catch (err) {
         renderScanResults([]);
         showNotification('扫描失败', '无法获取扫描结果，请检查接口或网络', 'error');
@@ -275,8 +280,16 @@ const fetchScanResults = async () => {
 };
 
 // 动作：下发连接指令，成功后刷新已连接列表
-const handleConnect = async (index, mac, name) => {
+const handleConnect = async (index, mac, name, buttonEl) => {
+    const btn = buttonEl || null;
+    const originalHtml = btn ? btn.innerHTML : '';
+    if (btn) {
+        btn.setAttribute('disabled', 'true');
+        btn.classList.add('opacity-70', 'cursor-not-allowed');
+        btn.innerHTML = '<span class="inline-flex items-center"><span class="loader w-4 h-4 border-2 border-white rounded-full mr-2"></span>连接中</span>';
+    }
     try {
+        // 发送连接指令
         const res = await fetch(buildSleUrl('connect'), {
             method: 'POST',
             headers: {
@@ -286,13 +299,23 @@ const handleConnect = async (index, mac, name) => {
             body: JSON.stringify({ mac })
         });
         if (!res.ok) throw new Error(`连接失败：${res.status}`);
-        const data = await res.json();
+        const data = await res.json(); // 返回状态
         const success = data.status !== false;
         if (!success) throw new Error(data.message || '连接指令执行失败');
         showNotification('连接成功', `已连接到设备 ${name || index}`, 'success');
-        await fetchConnectedDevices();
+        // 将当前连接加入本地已连接列表（无查询接口）
+        const rssiValue = name || '--';
+        sleLocalConnections.push({ mac, rssi: rssiValue });
+        saveCachedConnections();
+        renderConnectedDevices(sleLocalConnections);
     } catch (err) {
         showNotification('连接失败', err.message || '无法下发连接指令', 'error');
+    } finally {
+        if (btn) {
+            btn.innerHTML = originalHtml || '<i class="fa fa-link mr-1"></i>连接';
+            btn.removeAttribute('disabled');
+            btn.classList.remove('opacity-70', 'cursor-not-allowed');
+        }
     }
 };
 
@@ -304,7 +327,9 @@ const bindConnectButtons = () => {
             const index = btn.getAttribute('data-index');
             const mac = btn.getAttribute('data-mac');
             const name = btn.getAttribute('data-name');
-            handleConnect(index, mac, name);
+            const rssi = btn.getAttribute('data-rssi');
+            // 连接后使用 rssi 记录本地表格
+            handleConnect(index, mac, rssi || name, btn);
         });
     });
 };
@@ -322,8 +347,9 @@ const initSlePage = async () => {
     bindSleEvents();
     initTheme();
     await loadSleApiConfig();
-    await Promise.all([fetchBasicInfo(), fetchConnectedDevices()]);
+    await fetchBasicInfo();
     await fetchScanResults();
+    await fetchConnectedDevices();
 };
 
 // 等待 DOM 完全加载后再执行
