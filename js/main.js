@@ -18,6 +18,33 @@ let API_SERVER = {};
 let API_CONFIG = {};
 let ADV_API_CONFIG = {}; // 高级信息相关接口独立配置，避免污染通用配置
 
+// 场景测试配置（用于说明与接口映射）
+const SCENARIO_TESTS = {
+    throughput: {
+        name: '吞吐量峰值测试',
+        description: '评估链路峰值吞吐能力与短时稳定性，适用于性能基准对比。',
+        apiKey: 'throughputTestUrl'
+    },
+    shortrange: {
+        name: '近距测试',
+        description: '在近距离环境下验证连接稳定性与速率表现，适用于实验室调试。',
+        apiKey: 'shortRangeTestUrl'
+    },
+    remoterange: {
+        name: '远距测试',
+        description: '在远距离场景评估覆盖能力与链路稳定性，适用于外场验证。',
+        apiKey: 'remoteRangeTestUrl'
+    },
+    lowpower: {
+        name: '低功耗测试',
+        description: '验证低功耗模式下的连接表现与耗能策略，适用于功耗评估。',
+        apiKey: 'lowPowerTestUrl'
+    }
+};
+
+// 当前选中的场景测试
+let selectedScenarioId = null;
+
 // 构造高级信息接口地址，使用与基础接口相同的IP/端口
 function setAdvApiConfig(ip, port, token = '', timeout = 10000) {
     ADV_API_CONFIG = {
@@ -232,11 +259,16 @@ document.addEventListener('DOMContentLoaded', async () => {
                 autoJoinLoading: document.getElementById('auto-join-loading'),
                 autoJoinGroup: document.getElementById('auto-join-group'),
 
-                // 场景测试元素
-                throughputTestBtn: document.getElementById('throughput-test-btn'),
-                nearTestBtn: document.getElementById('near-test-btn'),
-                farTestBtn: document.getElementById('far-test-btn'),
-                lowPowerTestBtn: document.getElementById('low-power-test-btn'),
+                // 场景配置元素（卡片选择 + 说明区）
+                scenarioCards: document.querySelectorAll('.scenario-card'),
+                scenarioTitle: document.getElementById('scenario-title'),
+                scenarioDesc: document.getElementById('scenario-desc'),
+                scenarioStartBtn: document.getElementById('scenario-start-btn'),
+                scenarioStartHint: document.getElementById('scenario-start-hint'),
+                scenarioSelectedBadge: document.getElementById('scenario-selected-badge'),
+                scenarioNetworkDot: document.getElementById('scenario-network-dot'),
+                scenarioNetworkText: document.getElementById('scenario-network-text'),
+                scenarioDeviceType: document.getElementById('scenario-device-type'),
 
                 // 高级参数表单元素
                 cpTypeSelect: document.getElementById('settings-cp-type'),
@@ -507,6 +539,27 @@ function init() {
     initAutoRefreshToggle();
 
     updateManualScanButtonState();
+    syncFooterWithCurrentPage();
+}
+
+/**
+ * 根据当前可见页面同步页脚样式
+ */
+function syncFooterWithCurrentPage() {
+    const visibleSection = Array.from(elements.pageSections || []).find(section => !section.classList.contains('hidden'));
+    const pageId = visibleSection?.id || 'device-display';
+    updateFooterMode(pageId);
+}
+
+/**
+ * 更新页脚模式（设备设置页固定高度）
+ */
+function updateFooterMode(pageId) {
+    const footer = document.getElementById('site-footer');
+    document.body.dataset.page = pageId;
+    if (footer) {
+        footer.classList.toggle('py-6', pageId !== 'scenario-test');
+    }
 }
 
 // 设置事件监听器
@@ -590,25 +643,169 @@ function setupEventListeners() {
     elements.cpTypeSelect?.addEventListener('change', () => updateSymbolTypeOptions());
     elements.sCfgIdxSelect?.addEventListener('change', () => updateSymbolTypeOptions());
 
-    // 场景测试（仅保留四个）
-    elements.throughputTestBtn?.addEventListener('click', () => {
-        postScenarioTest(ADV_API_CONFIG.throughputTestUrl, '吞吐量峰值测试', elements.throughputTestBtn);
-    });
-    elements.nearTestBtn?.addEventListener('click', () => {
-        postScenarioTest(ADV_API_CONFIG.shortRangeTestUrl, '近距测试', elements.nearTestBtn);
-    });
-    elements.farTestBtn?.addEventListener('click', () => {
-        postScenarioTest(ADV_API_CONFIG.remoteRangeTestUrl, '远距测试', elements.farTestBtn);
-    });
-    elements.lowPowerTestBtn?.addEventListener('click', () => {
-        postScenarioTest(ADV_API_CONFIG.lowPowerTestUrl, '低功耗测试', elements.lowPowerTestBtn);
-    });
+    // 场景配置：卡片选择与开始测试
+    initScenarioSelection();
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
     const autoJoinNetworkEl = document.getElementById('auto-join-network');
     if (autoJoinNetworkEl) {
         autoJoinNetworkEl.addEventListener('change', handleAutoJoinChange);
+    }
+}
+
+/**
+ * 初始化场景配置卡片交互逻辑
+ */
+function initScenarioSelection() {
+    const cards = elements.scenarioCards;
+    if (!cards || cards.length === 0) return;
+
+    cards.forEach(card => {
+        card.addEventListener('click', () => {
+            const scenarioId = card.dataset.scenario || null;
+            setScenarioSelection(scenarioId);
+        });
+    });
+
+    elements.scenarioStartBtn?.addEventListener('click', () => {
+        if (!selectedScenarioId) return;
+        const config = SCENARIO_TESTS[selectedScenarioId];
+        if (!config) return;
+
+        const apiUrl = ADV_API_CONFIG[config.apiKey];
+        postScenarioTest(apiUrl, config.name, elements.scenarioStartBtn);
+    });
+
+    // 初始化默认状态
+    setScenarioSelection(null);
+    updateScenarioDeviceStatus();
+}
+
+/**
+ * 设置当前选中的场景测试
+ */
+function setScenarioSelection(scenarioId) {
+    selectedScenarioId = scenarioId && SCENARIO_TESTS[scenarioId] ? scenarioId : null;
+
+    elements.scenarioCards?.forEach(card => {
+        const isActive = selectedScenarioId && card.dataset.scenario === selectedScenarioId;
+        card.classList.toggle('scenario-card--selected', isActive);
+        card.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+    });
+
+    updateScenarioInfo();
+}
+
+/**
+ * 更新右侧说明区信息
+ */
+function updateScenarioInfo() {
+    const info = selectedScenarioId ? SCENARIO_TESTS[selectedScenarioId] : null;
+
+    if (!elements.scenarioTitle || !elements.scenarioDesc || !elements.scenarioStartBtn) return;
+
+    if (!info) {
+        elements.scenarioTitle.textContent = '';
+        elements.scenarioTitle.classList.add('hidden');
+        elements.scenarioDesc.textContent = '请选择左侧测试类型，系统将加载对应说明并准备测试环境。';
+        elements.scenarioStartBtn.disabled = true;
+        elements.scenarioStartBtn.classList.add('btn-disabled');
+        if (elements.scenarioSelectedBadge) {
+            elements.scenarioSelectedBadge.textContent = '未选择';
+        }
+        if (elements.scenarioStartHint) {
+            elements.scenarioStartHint.textContent = '';
+            elements.scenarioStartHint.classList.add('hidden');
+        }
+        return;
+    }
+
+    elements.scenarioTitle.textContent = info.name;
+    elements.scenarioTitle.classList.remove('hidden');
+    elements.scenarioDesc.textContent = info.description;
+    elements.scenarioStartBtn.disabled = false;
+    elements.scenarioStartBtn.classList.remove('btn-disabled');
+
+    if (elements.scenarioSelectedBadge) {
+        elements.scenarioSelectedBadge.textContent = '已选择';
+    }
+    if (elements.scenarioStartHint) {
+        elements.scenarioStartHint.textContent = '';
+        elements.scenarioStartHint.classList.add('hidden');
+    }
+}
+
+/**
+ * 判断是否已组网（基于 currentDevice 内的连接信息）
+ */
+function getNetworkStatusFromCurrentDevice() {
+    const listFields = [
+        currentDevice.connected_devices,
+        currentDevice.conn_list,
+        currentDevice.connected_list,
+        currentDevice.peer_list,
+        currentDevice.bss_list
+    ];
+
+    const countFields = [
+        currentDevice.connected_num,
+        currentDevice.conn_num,
+        currentDevice.peer_num,
+        currentDevice.bss_num,
+        currentDevice.sta_num
+    ];
+
+    const flagFields = [
+        currentDevice.connected,
+        currentDevice.linked,
+        currentDevice.link_status,
+        currentDevice.network_ok,
+        currentDevice.connected_flag,
+        currentDevice.conn_state
+    ];
+
+    const hasList = listFields.some(list => Array.isArray(list) && list.length > 0);
+    const hasCount = countFields.some(count => typeof count === 'number' && count > 0);
+    const hasFlag = flagFields.some(flag => flag === 1 || flag === true);
+
+    if (hasList || hasCount || hasFlag) return true;
+
+    // 兜底：若当前设备中无明确信息，则参考已连接列表
+    return Array.isArray(connectedDevices) && connectedDevices.length > 0;
+}
+
+/**
+ * 更新场景配置区设备状态显示
+ */
+function updateScenarioDeviceStatus() {
+    const dot = elements.scenarioNetworkDot;
+    const text = elements.scenarioNetworkText;
+    const typeEl = elements.scenarioDeviceType;
+
+    if (dot && text) {
+        const isConnected = getNetworkStatusFromCurrentDevice();
+        dot.classList.toggle('bg-success', isConnected);
+        dot.classList.toggle('bg-danger', !isConnected);
+        text.textContent = isConnected ? '已组网' : '未组网';
+    }
+
+    if (typeEl) {
+        const rawType = currentDevice.slb_role || currentDevice.sub_role || currentDevice.type;
+        let displayType = '未知';
+
+        if (typeof rawType === 'string') {
+            const lower = rawType.toLowerCase();
+            if (lower.includes('g')) displayType = 'G';
+            else if (lower.includes('t')) displayType = 'T';
+            else displayType = rawType.toUpperCase();
+        } else if (rawType === 0) {
+            displayType = 'G';
+        } else if (rawType === 1) {
+            displayType = 'T';
+        }
+
+        typeEl.textContent = displayType;
     }
 }
 
@@ -1560,6 +1757,9 @@ function updateDeviceDisplay() {
         deviceRangeOptEl.textContent = rangeOpt !== undefined ? (RANGE_OPT_LABELS[rangeOpt] || rangeOpt) : '未知';
     }
 
+    // 同步场景配置区的设备状态显示
+    updateScenarioDeviceStatus();
+
     updateManualScanButtonState();
 }
 
@@ -1851,6 +2051,8 @@ window.addEventListener('beforeunload', function() {
 
 // 页面切换
 function switchPage(pageId) {
+    updateFooterMode(pageId);
+
     // 确保节点扫描页面元素存在
     const nodeScanSection = document.getElementById('node-scan');
     if (nodeScanSection) {

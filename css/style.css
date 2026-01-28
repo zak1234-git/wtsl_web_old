@@ -54,6 +54,94 @@
     display: none;
 }
 
+/* 场景配置页面：让页脚贴近页面底部，减少下方空白 */
+body[data-page="scenario-test"] {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+body[data-page="scenario-test"] main {
+    flex: 1 1 auto;
+}
+
+body[data-page="scenario-test"] #site-footer {
+    margin-top: 0;
+    min-height: 72px;
+    padding-top: 0;
+    padding-bottom: 0;
+    display: flex;
+    align-items: center;
+}
+
+body[data-page="scenario-test"] #site-footer .container,
+#site-footer.footer-fixed .container {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* 场景测试卡片样式 */
+.scenario-card {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 16px;
+    border-radius: 14px;
+    border: 1px solid var(--dark-lightest-color, #374151);
+    background: var(--dark-color, #111827);
+    text-align: left;
+    transition: all 0.2s ease;
+}
+
+.scenario-card:hover {
+    transform: translateY(-1px);
+    border-color: var(--primary-color, #165DFF);
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.25);
+}
+
+.scenario-card__icon {
+    width: 42px;
+    height: 42px;
+    border-radius: 12px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(22, 93, 255, 0.16);
+    color: var(--primary-color, #165DFF);
+    font-size: 18px;
+    flex-shrink: 0;
+}
+
+.scenario-card__title {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-color, #E5E7EB);
+}
+
+.scenario-card__desc {
+    margin-top: 4px;
+    font-size: 12px;
+    color: var(--text-muted-color, #9CA3AF);
+}
+
+.scenario-card--selected {
+    border-color: var(--primary-color, #165DFF);
+    background: linear-gradient(135deg, rgba(22, 93, 255, 0.18), rgba(31, 41, 55, 0.9));
+    box-shadow: 0 12px 28px rgba(22, 93, 255, 0.18);
+}
+
+.scenario-card--selected .scenario-card__icon {
+    background: var(--primary-color, #165DFF);
+    color: #fff;
+}
+
+.scenario-card--selected .scenario-card__desc {
+    color: rgba(255, 255, 255, 0.8);
+}
+
 /* 自动刷新开关样式 - 适配主题 */
 .auto-refresh-switch {
     position: relative;
