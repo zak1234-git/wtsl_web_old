@@ -224,9 +224,9 @@ input:checked + .auto-refresh-slider:before {
     --primary-color: #165DFF;
     --secondary-color: #722ED1;
     --accent-color: #F97316;
-    --dark-color: #F9FAFB;
-    --dark-light-color: #F3F4F6;
-    --dark-lighter-color: #E5E7EB;
+    --dark-color: #F2F5FA;
+    --dark-light-color: #E9EEF6;
+    --dark-lighter-color: #DEE5F0;
     --text-color: #111827;
 }
 
