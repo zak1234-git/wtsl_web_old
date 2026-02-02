@@ -54,18 +54,24 @@
     display: none;
 }
 
-/* 场景配置页面：让页脚贴近页面底部，减少下方空白 */
-body[data-page="scenario-test"] {
+/* 场景配置/节点扫描/软件升级页面：让页脚贴近页面底部，减少下方空白 */
+body[data-page="scenario-test"],
+body[data-page="node-scan"],
+body[data-page="firmware-upgrade"] {
     min-height: 100vh;
     display: flex;
     flex-direction: column;
 }
 
-body[data-page="scenario-test"] main {
+body[data-page="scenario-test"] main,
+body[data-page="node-scan"] main,
+body[data-page="firmware-upgrade"] main {
     flex: 1 1 auto;
 }
 
-body[data-page="scenario-test"] #site-footer {
+body[data-page="scenario-test"] #site-footer,
+body[data-page="node-scan"] #site-footer,
+body[data-page="firmware-upgrade"] #site-footer {
     margin-top: 0;
     min-height: 72px;
     padding-top: 0;
@@ -75,6 +81,8 @@ body[data-page="scenario-test"] #site-footer {
 }
 
 body[data-page="scenario-test"] #site-footer .container,
+body[data-page="node-scan"] #site-footer .container,
+body[data-page="firmware-upgrade"] #site-footer .container,
 #site-footer.footer-fixed .container {
     width: 100%;
     display: flex;

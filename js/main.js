@@ -595,7 +595,7 @@ function setupEventListeners() {
     elements.retryLoad?.addEventListener('click', fetchDeviceInfo);
     
     // 节点扫描相关事件
-    elements.scanGNodesButton?.addEventListener('click', scanGNodes);
+    elements.scanGnodesButton?.addEventListener('click', scanGNodes);
     elements.backToSettingsButton?.addEventListener('click', () => {
         switchPage('device-settings');
     });
