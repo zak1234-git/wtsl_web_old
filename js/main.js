@@ -426,6 +426,7 @@ async function initApiConfig() {
       getUpgradeHistoryUrl: `http://${API_SERVER.ip}:${API_SERVER.port}/api/v1/getUpgradeHistory`,
       uploadFirmwareUrl: `http://${API_SERVER.ip}:${API_SERVER.port}/api/v1/nodes/0/firmware/upload`, // 上传API端点
       autoJoinNetworkUrl: `http://${API_SERVER.ip}:${API_SERVER.port}/api/v1/nodes/0/autoJoinNetwork`,
+      timeSyncUrl: `http://${API_SERVER.ip}:${API_SERVER.port}/api/v1/nodes/0/timesync`,
       timeout: 10000
     };
 
@@ -449,6 +450,7 @@ async function initApiConfig() {
       getUpgradeHistoryUrl: 'http://localhost:8080/api/v1/getUpgradeHistory',
       uploadFirmwareUrl: 'http://localhost:8080/api/v1/nodes/0/firmware/upload', // 上传API端点
       autojoinNetworkUrl: `http://localhost:8080/api/v1/nodes/0/autojoinNetwork`,
+      timeSyncUrl: 'http://localhost:8080/api/v1/nodes/0/timesync',
       timeout: 10000
     };
         setAdvApiConfig('localhost', '8080', '', API_CONFIG.timeout);
@@ -540,6 +542,49 @@ function init() {
 
     updateManualScanButtonState();
     syncFooterWithCurrentPage();
+}
+
+// 格式化本地时间为 "YYYY-MM-DD HH:mm:ss"
+function formatLocalTimeForSync(date = new Date()) {
+    const pad = (num) => String(num).padStart(2, '0');
+    const year = date.getFullYear();
+    const month = pad(date.getMonth() + 1);
+    const day = pad(date.getDate());
+    const hours = pad(date.getHours());
+    const minutes = pad(date.getMinutes());
+    const seconds = pad(date.getSeconds());
+    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+}
+
+// 时间同步：使用本地时间向后端同步
+async function syncTimeWithServer() {
+    if (!API_CONFIG?.timeSyncUrl) return;
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), API_CONFIG.timeout);
+    const syncTime = formatLocalTimeForSync();
+    console.debug('[TimeSync] 准备同步时间:', syncTime);
+    try {
+        const res = await fetch(API_CONFIG.timeSyncUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(API_CONFIG.token ? { Authorization: `Bearer ${API_CONFIG.token}` } : {})
+            },
+            body: JSON.stringify({ time: syncTime }),
+            signal: controller.signal
+        });
+        if (!res.ok) throw new Error(`时间同步失败: ${res.status}`);
+        const result = await res.json();
+        if (result?.status && result.status !== 'success') {
+            throw new Error(result.message || '时间同步失败');
+        }
+        console.info('[TimeSync] 同步成功:', { time: syncTime, status: result?.status || 'success' });
+    } catch (err) {
+        console.warn('[TimeSync] 时间同步失败:', err.message || err);
+    } finally {
+        clearTimeout(timeoutId);
+    }
 }
 
 /**
@@ -1448,6 +1493,7 @@ async function handleManualScan() {
 }
 
 async function fetchDeviceInfo() {
+    await syncTimeWithServer();
     // 显示加载状态
     elements.deviceLoading?.classList.remove('hidden');
     elements.deviceErrorHint?.classList.add('hidden');
