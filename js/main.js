@@ -1813,6 +1813,15 @@ function updateDeviceDisplay() {
         deviceacsenableEl.textContent = acsenable !== undefined ? (ACS_ENABLE_LABELS[acsenable] || acsenable) : '未知';
     }
 
+    // 自动避让开关仅对 G 节点显示
+    if (deviceacsenableEl) {
+        const deviceType = currentDevice.slb_role || currentDevice.sub_role || (currentDevice.type === 0 ? 'gnode' : 'tnode');
+        const acsContainer = deviceacsenableEl.closest('.bg-dark');
+        if (acsContainer) {
+            acsContainer.classList.toggle('hidden', deviceType === 'tnode');
+        }
+    }
+
     // 同步场景配置区的设备状态显示
     updateScenarioDeviceStatus();
 
@@ -1881,6 +1890,15 @@ function populateSettingsForm() {
     }
     if (rangeOptEl && currentDevice.range_opt !== undefined) rangeOptEl.value = currentDevice.range_opt;
     if (acsenableEl && currentDevice.acs_enable !== undefined) acsenableEl.value = currentDevice.acs_enable;
+
+    // 设备设置：自动避让开关仅对 G 节点显示
+    if (acsenableEl) {
+        const deviceType = currentDevice.slb_role || currentDevice.sub_role || (currentDevice.type === 0 ? 'gnode' : 'tnode');
+        const acsSettingContainer = acsenableEl.closest('div');
+        if (acsSettingContainer) {
+            acsSettingContainer.classList.toggle('hidden', deviceType === 'tnode');
+        }
+    }
 
     updateManualScanButtonState();
     

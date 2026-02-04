@@ -12,7 +12,7 @@ let SLE_API_CONFIG = {
     baseUrl: 'http://localhost:8080',
     endpoints: {
         basicInfo: '/api/v1/nodes/0/sle_basicinfo',
-        connected: '', // 暂无已连接设备查询接口
+        connected: '/api/v1/nodes/0/sle_conninfo', // 已连接设备查询接口
         scan: '/api/v1/nodes/0/sle_scan', // 扫描信息与已连接设备共用 sle_scan
         connect: '/api/v1/nodes/0/sle_connect'
     },
@@ -36,7 +36,7 @@ const sleDemoData = {
 */
 
 // 基本信息临时占位数据（接口未就绪时使用）
-const sleBasicMock = { name: 'SLE-DEV-01', mac: 'b:b:b:b:80:1' };
+const sleBasicMock = { name: 'SLE-DEV-01', mac: 'b:b:b:b:80:1', sle_type: 5 };
 
 // 已连接设备：从会话缓存恢复（切换页面保留，关闭标签页自动清空）
 const loadCachedConnections = () => {
@@ -74,6 +74,7 @@ const initSleRefs = () => {
     sleRefs.notificationClose = document.getElementById('close-notification');
 
     sleRefs.basicName = document.getElementById('sle-basic-name');
+    sleRefs.basicType = document.getElementById('sle-basic-type');
     sleRefs.basicAddress = document.getElementById('sle-basic-address');
     sleRefs.basicLoading = document.getElementById('sle-basic-loading');
 
@@ -83,6 +84,11 @@ const initSleRefs = () => {
     sleRefs.scanTable = document.getElementById('sle-scan-table');
     sleRefs.scanButton = document.getElementById('sle-scan-button');
     sleRefs.scanLoading = document.getElementById('sle-scan-loading');
+
+    sleRefs.configForm = document.getElementById('sle-config-form');
+    sleRefs.configName = document.getElementById('sle-config-name');
+    sleRefs.configType = document.getElementById('sle-config-type');
+    sleRefs.configSubmit = document.getElementById('sle-config-submit');
 };
 
 // 主题：同步 data-theme 与图标
@@ -151,10 +157,28 @@ const loadSleApiConfig = async () => {
 
 const buildSleUrl = (key) => `${SLE_API_CONFIG.baseUrl}${SLE_API_CONFIG.endpoints[key] || ''}`;
 
+// 设备类型映射
+const mapSleTypeLabel = (type) => {
+    const val = Number(type);
+    if (val === 5) return 'G节点';
+    if (val === 6) return 'T节点';
+    if (val === 7) return 'P节点';
+    return '--';
+};
+
 // 渲染：基础信息（纯展示，不校验）
 const renderBasicInfo = (payload = {}) => {
-    if (sleRefs.basicName) sleRefs.basicName.textContent = payload.name || '--';
-    if (sleRefs.basicAddress) sleRefs.basicAddress.textContent = payload.mac || payload.address || payload.ip || '--';
+    if (sleRefs.basicName) sleRefs.basicName.textContent = payload.sle_name || '--';
+    if (sleRefs.basicType) sleRefs.basicType.textContent = mapSleTypeLabel(payload.sle_type);
+    if (sleRefs.basicAddress) sleRefs.basicAddress.textContent = payload.mac || '--';
+};
+
+// 同步基础信息到配置表单
+const fillConfigForm = (payload = {}) => {
+    if (sleRefs.configName) sleRefs.configName.value = payload.sle_name || '';
+    if (sleRefs.configType && payload.sle_type !== undefined && payload.sle_type !== null) {
+        sleRefs.configType.value = String(payload.sle_type);
+    }
 };
 
 // 渲染：已连接设备表格
@@ -166,10 +190,10 @@ const renderConnectedDevices = (list = []) => {
     }
     // 将列表转为表格行，支持不同字段命名
     sleRefs.connectedTable.innerHTML = list.map((item) => {
-        const rssi = item.rssi ?? item.signal ?? '--';
+        const connId = item.conn_id ?? '--';
         const addr = item.mac || item.address || item.ip || '--';
         return `<tr class="border-b border-dark">
-            <td class="py-3 px-4 text-gray-300">${rssi}</td>
+            <td class="py-3 px-4 text-gray-300">${connId}</td>
             <td class="py-3 px-4 text-gray-300">${addr}</td>
         </tr>`;
     }).join('');
@@ -200,51 +224,79 @@ const renderScanResults = (list = []) => {
     bindConnectButtons();
 };
 
-// 请求：基础信息（接口未就绪，走占位数据；保留真实请求模板便于恢复）
+// 请求：基础信息（使用真实 API 接口）
 const fetchBasicInfo = async () => {
     sleRefs.basicLoading?.classList.remove('hidden');
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), SLE_API_CONFIG.timeout);
     try {
-        // TODO: 接口准备好后，恢复下方注释的真实请求逻辑
-        /*
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), SLE_API_CONFIG.timeout);
-        try {
-            const res = await fetch(buildSleUrl('basicInfo'), {
-                signal: controller.signal,
-                headers: SLE_API_CONFIG.token ? { Authorization: `Bearer ${SLE_API_CONFIG.token}` } : {}
-            });
-            if (!res.ok) throw new Error(`获取基本信息失败：${res.status}`);
-            const data = await res.json();
-            const payload = data.data || data;
-            if ((data.status && data.status !== 'success') || (!payload.name && !payload.mac)) {
-                throw new Error('API 返回错误响应');
-            }
-            renderBasicInfo(payload);
-            localStorage.setItem(sleState.cacheKeys.basic, JSON.stringify(payload));
-            return;
-        } catch (err) {
-            console.error('[SLE] 获取基本信息异常：', err.message);
-        } finally {
-            clearTimeout(timeoutId);
+        const res = await fetch(buildSleUrl('basicInfo'), {
+            method: 'GET',
+            signal: controller.signal,
+            headers: SLE_API_CONFIG.token ? { Authorization: `Bearer ${SLE_API_CONFIG.token}` } : {}
+        });
+        if (!res.ok) throw new Error(`获取基本信息失败：${res.status}`);
+        const data = await res.json();
+        const payload = data.data || data;
+        // 校验返回的数据结构：sle_type, name, mac
+        if ((data.status && data.status !== 'success') || (!payload.sle_name && !payload.mac)) {
+            throw new Error('API 返回错误响应');
         }
-        */
-
-        // 当前接口未就绪，使用占位数据
-        renderBasicInfo(sleBasicMock);
-        localStorage.setItem(sleState.cacheKeys.basic, JSON.stringify(sleBasicMock));
-        showNotification('示例数据', '基本信息接口未就绪，展示占位数据', 'info');
+        renderBasicInfo(payload);
+        fillConfigForm(payload);
+        localStorage.setItem(sleState.cacheKeys.basic, JSON.stringify(payload));
+    } catch (err) {
+        console.error('[SLE] 获取基本信息异常：', err.message);
+        showNotification('获取失败', '无法获取基本信息，请检查接口或网络', 'error');
+        // 失败时尝试加载缓存
+        try {
+            const cached = localStorage.getItem(sleState.cacheKeys.basic);
+            if (cached) {
+                const cachedPayload = JSON.parse(cached);
+                renderBasicInfo(cachedPayload);
+                fillConfigForm(cachedPayload);
+            }
+        } catch (e) {
+            renderBasicInfo(sleBasicMock);
+            fillConfigForm(sleBasicMock);
+        }
     } finally {
+        clearTimeout(timeoutId);
         sleRefs.basicLoading?.classList.add('hidden');
     }
 };
 
-// 请求：已连接设备列表，失败时清空并提示
+// 请求：已连接设备列表（使用真实 API 接口）
 const fetchConnectedDevices = async () => {
     sleRefs.connectedLoading?.classList.remove('hidden');
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), SLE_API_CONFIG.timeout);
     try {
-        // 渲染本地列表
+        const res = await fetch(buildSleUrl('connected'), {
+            signal: controller.signal,
+            headers: SLE_API_CONFIG.token ? { Authorization: `Bearer ${SLE_API_CONFIG.token}` } : {}
+        });
+        if (!res.ok) throw new Error(`获取已连接设备失败：${res.status}`);
+        const data = await res.json();
+        const list = data.data || data.nodes || data.list || [];
+        // 校验返回结构，确保是数组
+        if (!Array.isArray(list) || (data.status && data.status !== 'success')) {
+            throw new Error('API 返回空结果或错误响应');
+        }
+        renderConnectedDevices(list);
+        // 更新本地缓存
+        sleLocalConnections.length = 0;
+        sleLocalConnections.push(...list);
+        saveCachedConnections();
+    } catch (err) {
+        console.error('[SLE] 获取已连接设备异常：', err.message);
+        // 失败时使用本地缓存
         renderConnectedDevices(sleLocalConnections);
+        if (sleLocalConnections.length === 0) {
+            showNotification('获取失败', '无法获取已连接设备，请检查接口或网络', 'warning');
+        }
     } finally {
+        clearTimeout(timeoutId);
         sleRefs.connectedLoading?.classList.add('hidden');
     }
 };
