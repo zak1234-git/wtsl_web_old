@@ -165,6 +165,11 @@ const RANGE_OPT_LABELS = {
     1: '开启'
 };
 
+const ACS_ENABLE_LABELS = {
+    0: '关闭',
+    1: '开启'
+};
+
 // API服务器配置 - 提取IP和端口为独立变量，方便修改
 //const API_SERVER = {
 //    ip: '',  // API服务器IP地址
@@ -277,6 +282,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 sCfgIdxSelect: document.getElementById('settings-s-cfg-idx'),
                 powInput: document.getElementById('settings-pow'),
                 rangeOptSelect: document.getElementById('settings-range-opt'),
+                acsenableSelect: document.getElementById('settings-acs-enable'),
                 symbolTypeHint: document.getElementById('symbol-type-hint'),
 
                 // 高级信息展示元素
@@ -284,7 +290,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 deviceSymbolType: document.getElementById('device-symbol-type'),
                 deviceSysmsgPeriod: document.getElementById('device-sysmsg-period'),
                 deviceSCfgIdx: document.getElementById('device-s-cfg-idx'),
-                deviceRangeOpt: document.getElementById('device-range-opt')
+                deviceRangeOpt: document.getElementById('device-range-opt'),
+                deviceacsenable: document.getElementById('device-acs-enable')
         };
 
             initThemeControls();
@@ -562,8 +569,6 @@ async function syncTimeWithServer() {
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), API_CONFIG.timeout);
-    const syncTime = formatLocalTimeForSync();
-    console.debug('[TimeSync] 准备同步时间:', syncTime);
     try {
         const res = await fetch(API_CONFIG.timeSyncUrl, {
             method: 'POST',
@@ -571,7 +576,7 @@ async function syncTimeWithServer() {
                 'Content-Type': 'application/json',
                 ...(API_CONFIG.token ? { Authorization: `Bearer ${API_CONFIG.token}` } : {})
             },
-            body: JSON.stringify({ time: syncTime }),
+            body: JSON.stringify({ time: formatLocalTimeForSync() }),
             signal: controller.signal
         });
         if (!res.ok) throw new Error(`时间同步失败: ${res.status}`);
@@ -579,7 +584,6 @@ async function syncTimeWithServer() {
         if (result?.status && result.status !== 'success') {
             throw new Error(result.message || '时间同步失败');
         }
-        console.info('[TimeSync] 同步成功:', { time: syncTime, status: result?.status || 'success' });
     } catch (err) {
         console.warn('[TimeSync] 时间同步失败:', err.message || err);
     } finally {
@@ -1622,7 +1626,7 @@ async function fetchDeviceInfo() {
     }
 }
 
-// 获取高级信息（cp_type / symbol_type / sysmsg_period / s_cfg_idx / range_opt 等）
+// 获取高级信息（cp_type / symbol_type / sysmsg_period / s_cfg_idx / range_opt / acs_enable 等）
 async function fetchAdvancedInfo(silent = false, skipUiUpdate = false) {
     // 检查高级接口配置是否已初始化
     if (!ADV_API_CONFIG.getAdvInfoUrl) {
@@ -1680,6 +1684,7 @@ async function fetchAdvancedInfo(silent = false, skipUiUpdate = false) {
             sysmsg_period: advData.sysmsg_period,
             s_cfg_idx: advData.s_cfg_idx,
             range_opt: advData.range_opt,
+            acs_enable: advData.acs_enable,
             tx_power: txPower,
             pow: txPower ?? currentDevice.pow
         };
@@ -1781,6 +1786,7 @@ function updateDeviceDisplay() {
     const deviceSysmsgPeriodEl = elements.deviceSysmsgPeriod;
     const deviceSCfgIdxEl = elements.deviceSCfgIdx;
     const deviceRangeOptEl = elements.deviceRangeOpt;
+    const deviceacsenableEl = elements.deviceacsenable;
 
     if (deviceCpTypeEl) {
         const cpType = currentDevice.cp_type;
@@ -1801,6 +1807,10 @@ function updateDeviceDisplay() {
     if (deviceRangeOptEl) {
         const rangeOpt = currentDevice.range_opt;
         deviceRangeOptEl.textContent = rangeOpt !== undefined ? (RANGE_OPT_LABELS[rangeOpt] || rangeOpt) : '未知';
+    }
+    if (deviceacsenableEl) {
+        const acsenable = currentDevice.acs_enable;
+        deviceacsenableEl.textContent = acsenable !== undefined ? (ACS_ENABLE_LABELS[acsenable] || acsenable) : '未知';
     }
 
     // 同步场景配置区的设备状态显示
@@ -1845,6 +1855,7 @@ function populateSettingsForm() {
     const sysmsgPeriodEl = elements.sysmsgPeriodSelect;
     const powEl = elements.powInput;
     const rangeOptEl = elements.rangeOptSelect;
+    const acsenableEl = elements.acsenableSelect;
     
     // 使用当前设备数据或默认值，确保属性名一致
     if (typeEl) {
@@ -1869,6 +1880,7 @@ function populateSettingsForm() {
         }
     }
     if (rangeOptEl && currentDevice.range_opt !== undefined) rangeOptEl.value = currentDevice.range_opt;
+    if (acsenableEl && currentDevice.acs_enable !== undefined) acsenableEl.value = currentDevice.acs_enable;
 
     updateManualScanButtonState();
     
@@ -2300,9 +2312,10 @@ async function handleSaveAdvancedSettings() {
     const sysmsgPeriodEl = elements.sysmsgPeriodSelect; 
     const powEl = elements.powInput; 
     const rangeOptEl = elements.rangeOptSelect; 
+    const acsenableEl = elements.acsenableSelect;
 
     // 检查是否所有控件都已正确加载
-    if (!cpTypeEl || !sCfgIdxEl || !symbolTypeEl || !sysmsgPeriodEl || !rangeOptEl) {
+    if (!cpTypeEl || !sCfgIdxEl || !symbolTypeEl || !sysmsgPeriodEl || !rangeOptEl || !acsenableEl) {
         showNotification('操作失败', '高级参数控件未正确加载', true);
         return;
     }
@@ -2316,11 +2329,12 @@ async function handleSaveAdvancedSettings() {
     const symbolType = parseInt(symbolTypeEl.value); 
     const sysmsgPeriod = parseInt(sysmsgPeriodEl.value); 
     const rangeOpt = parseInt(rangeOptEl.value); 
+    const acsenable = parseInt(acsenableEl.value);
     const powValueRaw = powEl?.value ?? ''; 
     const powValue = powValueRaw === '' ? null : parseInt(powValueRaw); 
 
     // 验证表单数据是否完整
-    if (Number.isNaN(cpType) || Number.isNaN(sCfgIdx) || Number.isNaN(symbolType) || Number.isNaN(sysmsgPeriod) || Number.isNaN(rangeOpt)) {
+    if (Number.isNaN(cpType) || Number.isNaN(sCfgIdx) || Number.isNaN(symbolType) || Number.isNaN(sysmsgPeriod) || Number.isNaN(rangeOpt) || Number.isNaN(acsenable)) {
         showNotification('操作失败', '请完整选择高级参数', true);
         return;
     }
@@ -2346,7 +2360,8 @@ async function handleSaveAdvancedSettings() {
             s_cfg_idx: sCfgIdx,
             symbol_type: symbolType,
             sysmsg_period: sysmsgPeriod,
-            range_opt: rangeOpt
+            range_opt: rangeOpt,
+            acs_enable: acsenable
         };
 
         // 如果功率值不为空，则添加到数据中
@@ -2387,6 +2402,7 @@ async function handleSaveAdvancedSettings() {
             symbol_type: symbolType,
             sysmsg_period: sysmsgPeriod,
             range_opt: rangeOpt,
+            acs_enable: acsenable,
             tx_power: powValue === null ? currentDevice.tx_power : powValue,
             pow: powValue === null ? currentDevice.pow : powValue
         };

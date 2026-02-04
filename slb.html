@@ -394,6 +394,10 @@
                         <p class="text-gray-400 text-sm mb-1">远距开关 (range_opt)</p>
                         <p id="device-range-opt" class="text-white font-medium"></p>
                     </div>
+                    <div class="bg-dark rounded-lg p-4">
+                        <p class="text-gray-400 text-sm mb-1">自动避让开关 (acs_enable)</p>
+                        <p id="device-acs-enable" class="text-white font-medium"></p>
+                    </div>
                 </div>
             </div>
 
@@ -585,6 +589,15 @@
                                     <option value="0">关闭</option>
                                 </select>
                             </div>
+
+                            <div>
+                                <label for="settings-acs-enable" class="block text-sm font-medium text-gray-300 mb-1">自动避让开关 (acs_enable)</label>
+                                <select id="settings-acs-enable" class="w-full bg-dark border border-dark-lightest rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-primary/50">
+                                    <option value="1">开启</option>
+                                    <option value="0">关闭</option>
+                                </select>
+                            </div>
+                            
                         </div>
                     </div>
                     <div class="flex justify-end mt-6">
@@ -822,7 +835,7 @@
         <div class="container mx-auto px-4 text-center text-gray-500 text-sm">
             <p class="inline-flex items-center gap-2">
                 <img src="logo_big.png" alt="微泰科技 Logo" class="h-6 w-auto" />
-                设备管理系统 &copy; 2025 webversion 微泰科技 版权所有
+                设备管理系统 &copy; 2026 webversion 微泰科技 版权所有
             </p>
         </div>
     </footer>
