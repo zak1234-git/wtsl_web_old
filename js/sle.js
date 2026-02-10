@@ -12,6 +12,7 @@ let SLE_API_CONFIG = {
     baseUrl: 'http://localhost:8080',
     endpoints: {
         basicInfo: '/api/v1/nodes/0/sle_basicinfo',
+        setbasicinfo: '/api/v1/nodes/0/sle_basicinfo',
         connected: '/api/v1/nodes/0/sle_conninfo', // 已连接设备查询接口
         scan: '/api/v1/nodes/0/sle_scan', // 扫描信息与已连接设备共用 sle_scan
         connect: '/api/v1/nodes/0/sle_connect'
@@ -37,6 +38,9 @@ const sleDemoData = {
 
 // 基本信息临时占位数据（接口未就绪时使用）
 const sleBasicMock = { name: 'SLE-DEV-01', mac: 'b:b:b:b:80:1', sle_type: 5 };
+
+let sleCurrentType = null;
+let slePendingReboot = false;
 
 // 已连接设备：从会话缓存恢复（切换页面保留，关闭标签页自动清空）
 const loadCachedConnections = () => {
@@ -82,10 +86,12 @@ const initSleRefs = () => {
     sleRefs.connectedLoading = document.getElementById('sle-connected-loading');
 
     sleRefs.scanTable = document.getElementById('sle-scan-table');
+    sleRefs.scanCard = document.getElementById('sle-scan-card');
     sleRefs.scanButton = document.getElementById('sle-scan-button');
     sleRefs.scanLoading = document.getElementById('sle-scan-loading');
 
     sleRefs.configForm = document.getElementById('sle-config-form');
+    sleRefs.configCard = document.getElementById('sle-config-card');
     sleRefs.configName = document.getElementById('sle-config-name');
     sleRefs.configType = document.getElementById('sle-config-type');
     sleRefs.configSubmit = document.getElementById('sle-config-submit');
@@ -165,12 +171,35 @@ const mapSleTypeLabel = (type) => {
     if (val === 7) return 'P节点';
     return '--';
 };
+const mapSleTypeClass = (type) => {
+    const val = Number(type);
+    if (val === 5) return 'bg-primary/20 text-primary';
+    if (val === 6) return 'bg-accent/20 text-accent';
+    if (val === 7) return 'bg-secondary/20 text-secondary';
+    return 'bg-dark-lightest text-gray-300';
+};
 
 // 渲染：基础信息（纯展示，不校验）
 const renderBasicInfo = (payload = {}) => {
     if (sleRefs.basicName) sleRefs.basicName.textContent = payload.sle_name || '--';
-    if (sleRefs.basicType) sleRefs.basicType.textContent = mapSleTypeLabel(payload.sle_type);
+    if (sleRefs.basicType) {
+        sleRefs.basicType.textContent = mapSleTypeLabel(payload.sle_type);
+        sleRefs.basicType.className = `px-3 py-1 rounded-full text-sm font-medium ${mapSleTypeClass(payload.sle_type)}`;
+    }
     if (sleRefs.basicAddress) sleRefs.basicAddress.textContent = payload.mac || '--';
+
+    if (sleRefs.scanCard) {
+        const isGNode = Number(payload.sle_type) === 5;
+        sleRefs.scanCard.classList.toggle('hidden', !isGNode);
+        if (sleRefs.configCard) {
+            // 扫描卡片可见时，配置卡片占整行；隐藏时占右侧空位
+            sleRefs.configCard.classList.toggle('lg:col-span-2', isGNode);
+        }
+    }
+
+    if (payload.sle_type !== undefined && payload.sle_type !== null) {
+        sleCurrentType = Number(payload.sle_type);
+    }
 };
 
 // 同步基础信息到配置表单
@@ -391,6 +420,77 @@ const bindSleEvents = () => {
     sleRefs.themeToggle?.addEventListener('click', handleThemeToggle);
     sleRefs.notificationClose?.addEventListener('click', hideNotification);
     sleRefs.scanButton?.addEventListener('click', fetchScanResults);
+    sleRefs.configSubmit?.addEventListener('click', handleConfigSubmit);
+};
+
+// 动作：设置 SLE 设备基本信息
+const handleConfigSubmit = async () => {
+    if (slePendingReboot) {
+        showNotification('设备重启', '设备正在重启中，请稍后刷新页面', 'warning');
+        return;
+    }
+    const name = sleRefs.configName?.value?.trim();
+    const typeValue = sleRefs.configType?.value;
+    const sleType = typeValue !== undefined && typeValue !== null ? Number(typeValue) : NaN;
+
+    if (!name) {
+        showNotification('校验失败', '请输入设备名称', 'warning');
+        return;
+    }
+    if (![5, 6].includes(sleType)) {
+        showNotification('校验失败', '请选择有效的设备类型', 'warning');
+        return;
+    }
+
+    const btn = sleRefs.configSubmit;
+    const originalHtml = btn ? btn.innerHTML : '';
+    if (btn) {
+        btn.setAttribute('disabled', 'true');
+        btn.classList.add('opacity-70', 'cursor-not-allowed');
+        btn.innerHTML = '<span class="inline-flex items-center"><span class="loader w-4 h-4 border-2 border-white rounded-full mr-2"></span>保存中</span>';
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), SLE_API_CONFIG.timeout);
+    try {
+        const res = await fetch(buildSleUrl('setbasicinfo'), {
+            method: 'POST',
+            signal: controller.signal,
+            headers: {
+                'Content-Type': 'application/json',
+                ...(SLE_API_CONFIG.token ? { Authorization: `Bearer ${SLE_API_CONFIG.token}` } : {})
+            },
+            body: JSON.stringify({ sle_type: sleType, sle_name: name })
+        });
+        if (!res.ok) throw new Error(`保存失败：${res.status}`);
+        const data = await res.json();
+        if (data.status !== 'success') {
+            throw new Error(data.message || '保存失败');
+        }
+        const typeChanged = sleCurrentType !== null && sleType !== sleCurrentType;
+        if (typeChanged) {
+            slePendingReboot = true;
+            sleCurrentType = sleType;
+            showNotification('设备将重启', '设备类型已更改，请稍后刷新页面', 'warning');
+            sleRefs.themeToggle?.setAttribute('disabled', 'true');
+            sleRefs.scanButton?.setAttribute('disabled', 'true');
+            sleRefs.configSubmit?.setAttribute('disabled', 'true');
+            sleRefs.configName?.setAttribute('disabled', 'true');
+            sleRefs.configType?.setAttribute('disabled', 'true');
+            return;
+        }
+        showNotification('保存成功', '设备基本信息已更新', 'success');
+        await fetchBasicInfo();
+    } catch (err) {
+        showNotification('保存失败', err.message || '无法保存设备基本信息', 'error');
+    } finally {
+        clearTimeout(timeoutId);
+        if (btn) {
+            btn.innerHTML = originalHtml || '<i class="fa fa-save mr-2"></i><span>保存配置</span>';
+            btn.removeAttribute('disabled');
+            btn.classList.remove('opacity-70', 'cursor-not-allowed');
+        }
+    }
 };
 
 // 初始化入口：缓存 DOM、绑定事件、初始化主题与配置、并行拉取数据
