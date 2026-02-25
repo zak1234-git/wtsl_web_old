@@ -375,6 +375,10 @@
 
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     <div class="bg-dark rounded-lg p-4">
+                        <p class="text-gray-400 text-sm mb-1">小区标识 (cell_id)</p>
+                        <p id="device-cell-id" class="text-white font-medium"></p>
+                    </div>
+                    <div class="bg-dark rounded-lg p-4">
                         <p class="text-gray-400 text-sm mb-1">循环前缀类型 (cp_type)</p>
                         <p id="device-cp-type" class="text-white font-medium"></p>
                     </div>
@@ -542,6 +546,11 @@
                         </div>
                         <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
                             <div>
+                                <label for="settings-cell-id" class="block text-sm font-medium text-gray-300 mb-1">小区标识 (cell_id)</label>
+                                <input type="number" id="settings-cell-id" min="1" max="20" step="1" class="w-full bg-dark border border-dark-lightest rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-primary/50" placeholder="请输入 1-20 的 cell_id">
+                            </div>
+
+                            <div>
                                 <label for="settings-cp-type" class="block text-sm font-medium text-gray-300 mb-1">循环前缀类型 (cp_type)</label>
                                 <select id="settings-cp-type" class="w-full bg-dark border border-dark-lightest rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-primary/50">
                                     <option value="0">0 常规循环前缀 (5Ts)</option>
@@ -660,6 +669,15 @@
                                 </div>
                                 <div class="scenario-card__content">
                                     <p class="scenario-card__title">低功耗测试</p>
+                                </div>
+                            </button>
+
+                            <button type="button" class="scenario-card" data-scenario="lowlatency" aria-pressed="false">
+                                <div class="scenario-card__icon">
+                                    <i class="fa fa-clock-o"></i>
+                                </div>
+                                <div class="scenario-card__content">
+                                    <p class="scenario-card__title">低时延测试</p>
                                 </div>
                             </button>
                         </div>

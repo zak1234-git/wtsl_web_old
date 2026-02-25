@@ -39,6 +39,11 @@ const SCENARIO_TESTS = {
         name: '低功耗测试',
         description: '验证低功耗模式下的连接表现与耗能策略，适用于功耗评估。',
         apiKey: 'lowPowerTestUrl'
+    },
+    lowlatency: {
+        name: '低时延测试',
+        description: '验证低时延场景下的传输稳定性与时延性能，适用于实时业务评估。',
+        apiKey: 'lowLatencyTestUrl'
     }
 };
 
@@ -54,6 +59,7 @@ function setAdvApiConfig(ip, port, token = '', timeout = 10000) {
         shortRangeTestUrl: `http://${ip}:${port}/api/v1/nodes/0/shortrange_test`,
         remoteRangeTestUrl: `http://${ip}:${port}/api/v1/nodes/0/remoterange_test`,
         lowPowerTestUrl: `http://${ip}:${port}/api/v1/nodes/0/lowpow_test`,
+        lowLatencyTestUrl: `http://${ip}:${port}/api/v1/nodes/0/lowlatency_test`,
         token: token || '',
         timeout: timeout || 10000
     };
@@ -276,6 +282,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 scenarioDeviceType: document.getElementById('scenario-device-type'),
 
                 // 高级参数表单元素
+                cellIdInput: document.getElementById('settings-cell-id'),
                 cpTypeSelect: document.getElementById('settings-cp-type'),
                 symbolTypeSelect: document.getElementById('settings-symbol-type'),
                 sysmsgPeriodSelect: document.getElementById('settings-sysmsg-period'),
@@ -286,6 +293,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 symbolTypeHint: document.getElementById('symbol-type-hint'),
 
                 // 高级信息展示元素
+                deviceCellId: document.getElementById('device-cell-id'),
                 deviceCpType: document.getElementById('device-cp-type'),
                 deviceSymbolType: document.getElementById('device-symbol-type'),
                 deviceSysmsgPeriod: document.getElementById('device-sysmsg-period'),
@@ -1679,6 +1687,7 @@ async function fetchAdvancedInfo(silent = false, skipUiUpdate = false) {
         // 更新当前设备信息
         currentDevice = {
             ...currentDevice,
+            cell_id: advData.cell_id,
             cp_type: advData.cp_type,
             symbol_type: advData.symbol_type,
             sysmsg_period: advData.sysmsg_period,
@@ -1781,6 +1790,7 @@ function updateDeviceDisplay() {
     }
 
     // 高级参数显示
+    const deviceCellIdEl = elements.deviceCellId;
     const deviceCpTypeEl = elements.deviceCpType;
     const deviceSymbolTypeEl = elements.deviceSymbolType;
     const deviceSysmsgPeriodEl = elements.deviceSysmsgPeriod;
@@ -1788,6 +1798,10 @@ function updateDeviceDisplay() {
     const deviceRangeOptEl = elements.deviceRangeOpt;
     const deviceacsenableEl = elements.deviceacsenable;
 
+    if (deviceCellIdEl) {
+        const cellId = currentDevice.cell_id;
+        deviceCellIdEl.textContent = cellId !== undefined ? cellId : '未知';
+    }
     if (deviceCpTypeEl) {
         const cpType = currentDevice.cp_type;
         deviceCpTypeEl.textContent = cpType !== undefined ? (CP_TYPE_LABELS[cpType] || cpType) : '未知';
@@ -1858,6 +1872,7 @@ function populateSettingsForm() {
     const serveripEl = document.getElementById('setting-server-ip');
     const serverportEl = document.getElementById('setting-server-port');
     const versionEl = document.getElementById('settings-version');
+    const cellIdEl = elements.cellIdInput;
     const cpTypeEl = elements.cpTypeSelect;
     const sCfgIdxEl = elements.sCfgIdxSelect;
     const symbolTypeEl = elements.symbolTypeSelect;
@@ -1879,6 +1894,7 @@ function populateSettingsForm() {
     if (serveripEl) serveripEl.value = currentDevice.net_manage_ip;
     if (serverportEl) serverportEl.value = currentDevice.log_port;
     if (versionEl) versionEl.value = currentDevice.version;
+    if (cellIdEl && currentDevice.cell_id !== undefined) cellIdEl.value = currentDevice.cell_id;
     if (cpTypeEl && currentDevice.cp_type !== undefined) cpTypeEl.value = currentDevice.cp_type;
     if (sCfgIdxEl && currentDevice.s_cfg_idx !== undefined) sCfgIdxEl.value = currentDevice.s_cfg_idx;
     if (sysmsgPeriodEl && currentDevice.sysmsg_period !== undefined) sysmsgPeriodEl.value = currentDevice.sysmsg_period;
@@ -1890,6 +1906,13 @@ function populateSettingsForm() {
     }
     if (rangeOptEl && currentDevice.range_opt !== undefined) rangeOptEl.value = currentDevice.range_opt;
     if (acsenableEl && currentDevice.acs_enable !== undefined) acsenableEl.value = currentDevice.acs_enable;
+
+    // 设备设置页：T节点隐藏整个高级参数区域（含保存按钮）
+    const isTNode = (currentDevice.slb_role || currentDevice.sub_role || (currentDevice.type === 0 ? 'gnode' : 'tnode')) === 'tnode';
+    const advancedSection = document.querySelector('#device-settings .border-t.border-dark-lightest.pt-4');
+    const advancedAction = document.getElementById('settings-advanced-submit')?.closest('div.flex.justify-end.mt-6');
+    if (advancedSection) advancedSection.classList.toggle('hidden', isTNode);
+    if (advancedAction) advancedAction.classList.toggle('hidden', isTNode);
 
     // 设备设置：自动避让开关仅对 G 节点显示
     if (acsenableEl) {
@@ -2324,6 +2347,7 @@ function getChannelSupportedBandwidths(channel) {
 // 保存高级参数
 async function handleSaveAdvancedSettings() {
     // 获取高级参数表单中的各个元素
+    const cellIdEl = elements.cellIdInput;
     const cpTypeEl = elements.cpTypeSelect; 
     const sCfgIdxEl = elements.sCfgIdxSelect; 
     const symbolTypeEl = elements.symbolTypeSelect; 
@@ -2333,7 +2357,7 @@ async function handleSaveAdvancedSettings() {
     const acsenableEl = elements.acsenableSelect;
 
     // 检查是否所有控件都已正确加载
-    if (!cpTypeEl || !sCfgIdxEl || !symbolTypeEl || !sysmsgPeriodEl || !rangeOptEl || !acsenableEl) {
+    if (!cellIdEl || !cpTypeEl || !sCfgIdxEl || !symbolTypeEl || !sysmsgPeriodEl || !rangeOptEl || !acsenableEl) {
         showNotification('操作失败', '高级参数控件未正确加载', true);
         return;
     }
@@ -2342,6 +2366,7 @@ async function handleSaveAdvancedSettings() {
     updateSymbolTypeOptions();
 
     // 获取表单中的值
+    const cellId = parseInt(cellIdEl.value);
     const cpType = parseInt(cpTypeEl.value); 
     const sCfgIdx = parseInt(sCfgIdxEl.value); 
     const symbolType = parseInt(symbolTypeEl.value); 
@@ -2352,8 +2377,13 @@ async function handleSaveAdvancedSettings() {
     const powValue = powValueRaw === '' ? null : parseInt(powValueRaw); 
 
     // 验证表单数据是否完整
-    if (Number.isNaN(cpType) || Number.isNaN(sCfgIdx) || Number.isNaN(symbolType) || Number.isNaN(sysmsgPeriod) || Number.isNaN(rangeOpt) || Number.isNaN(acsenable)) {
+    if (Number.isNaN(cellId) || Number.isNaN(cpType) || Number.isNaN(sCfgIdx) || Number.isNaN(symbolType) || Number.isNaN(sysmsgPeriod) || Number.isNaN(rangeOpt) || Number.isNaN(acsenable)) {
         showNotification('操作失败', '请完整选择高级参数', true);
+        return;
+    }
+
+    if (cellId < 1 || cellId > 20) {
+        showNotification('操作失败', 'cell_id 范围需为 1-20', true);
         return;
     }
 
@@ -2374,6 +2404,7 @@ async function handleSaveAdvancedSettings() {
     try {
         // 准备发送的数据
         const postData = {
+            cell_id: cellId,
             cp_type: cpType,
             s_cfg_idx: sCfgIdx,
             symbol_type: symbolType,
@@ -2415,6 +2446,7 @@ async function handleSaveAdvancedSettings() {
         // 更新当前设备信息
         currentDevice = {
             ...currentDevice,
+            cell_id: cellId,
             cp_type: cpType,
             s_cfg_idx: sCfgIdx,
             symbol_type: symbolType,
