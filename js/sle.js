@@ -15,7 +15,8 @@ let SLE_API_CONFIG = {
         setbasicinfo: '/api/v1/nodes/0/sle_basicinfo',
         connected: '/api/v1/nodes/0/sle_conninfo', // 已连接设备查询接口
         scan: '/api/v1/nodes/0/sle_scan', // 扫描信息与已连接设备共用 sle_scan
-        connect: '/api/v1/nodes/0/sle_connect'
+        connect: '/api/v1/nodes/0/sle_connect',
+        sle_announce_id: '/api/v1/nodes/0/sle_announce_id'
     },
     token: '',
     timeout: 10000
@@ -41,6 +42,8 @@ const sleBasicMock = { name: 'SLE-DEV-01', mac: 'b:b:b:b:80:1', sle_type: 5 };
 
 let sleCurrentType = null;
 let slePendingReboot = false;
+let sleTcpManualSelect = false;
+let sleTcpAvailableChannels = [];
 
 // 已连接设备：从会话缓存恢复（切换页面保留，关闭标签页自动清空）
 const loadCachedConnections = () => {
@@ -95,6 +98,13 @@ const initSleRefs = () => {
     sleRefs.configName = document.getElementById('sle-config-name');
     sleRefs.configType = document.getElementById('sle-config-type');
     sleRefs.configSubmit = document.getElementById('sle-config-submit');
+
+    sleRefs.tcpTargetList = document.getElementById('sle-tcp-target-list');    
+    sleRefs.tcpTargetPanel = document.getElementById('sle-tcp-target-panel');
+    sleRefs.tcpTargetMode = document.getElementById('sle-tcp-target-mode');
+    sleRefs.tcpToggleSelect = document.getElementById('sle-tcp-toggle-select');
+    sleRefs.tcpSendButton = document.getElementById('sle-tcp-send-button');
+    sleRefs.tcpSendLoading = document.getElementById('sle-tcp-send-loading');
 };
 
 // 主题：同步 data-theme 与图标
@@ -179,6 +189,13 @@ const mapSleTypeClass = (type) => {
     return 'bg-dark-lightest text-gray-300';
 };
 
+const escapeHtml = (value) => String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
 // 渲染：基础信息（纯展示，不校验）
 const renderBasicInfo = (payload = {}) => {
     if (sleRefs.basicName) sleRefs.basicName.textContent = payload.sle_name || '--';
@@ -215,6 +232,7 @@ const renderConnectedDevices = (list = []) => {
     if (!sleRefs.connectedTable) return;
     if (!Array.isArray(list) || list.length === 0) {
         sleRefs.connectedTable.innerHTML = '<tr><td colspan="2" class="py-4 px-4 text-center text-gray-400">暂无连接设备</td></tr>';
+        renderTcpTargetOptions([]);
         return;
     }
     // 将列表转为表格行，支持不同字段命名
@@ -226,6 +244,158 @@ const renderConnectedDevices = (list = []) => {
             <td class="py-3 px-4 text-gray-300">${addr}</td>
         </tr>`;
     }).join('');
+    renderTcpTargetOptions(list);
+};
+
+const normalizeTcpChannel = (item) => {
+    // 使用已连接设备中的 conn_id 作为可发送目标
+    if (!item || typeof item !== 'object') return null;
+    const source = item.conn_id;
+    const parsed = Number.parseInt(source, 10);
+    return Number.isInteger(parsed) ? parsed : null;
+};
+
+const updateTcpTargetModeUI = () => {
+    // 根据“是否有可用通道 + 是否开启手动模式”同步提示文案与显隐
+    const hasChannels = sleTcpAvailableChannels.length > 0;
+    const isManual = sleTcpManualSelect && hasChannels;
+
+    if (sleRefs.tcpTargetPanel) {
+        sleRefs.tcpTargetPanel.classList.toggle('hidden', !isManual);
+    }
+    if (sleRefs.tcpTargetMode) {
+        sleRefs.tcpTargetMode.textContent = isManual ? '已开启手动选择：仅发送到勾选通道' : '默认发送到所有通道';
+    }
+    if (sleRefs.tcpToggleSelect) {
+        sleRefs.tcpToggleSelect.textContent = isManual ? '取消选择' : '选择通道';
+        sleRefs.tcpToggleSelect.toggleAttribute('disabled', !hasChannels);
+        sleRefs.tcpToggleSelect.classList.toggle('opacity-60', !hasChannels);
+        sleRefs.tcpToggleSelect.classList.toggle('cursor-not-allowed', !hasChannels);
+    }
+};
+
+const handleTcpToggleSelect = () => {
+    // 用户点击“选择通道/取消选择”按钮时切换模式
+    if (sleTcpAvailableChannels.length === 0) {
+        showNotification('暂无可选目标', '当前没有可用的已连接设备ID', 'warning');
+        return;
+    }
+    sleTcpManualSelect = !sleTcpManualSelect;
+    updateTcpTargetModeUI();
+};
+
+const renderTcpTargetOptions = (list = []) => {
+    // 根据已连接设备渲染可多选的目标通道
+    if (!sleRefs.tcpTargetList) return;
+    if (!Array.isArray(list) || list.length === 0) {
+        sleTcpAvailableChannels = [];
+        sleTcpManualSelect = false;
+        sleRefs.tcpTargetList.innerHTML = '<p class="text-gray-400 text-sm">暂无已连接设备可选</p>';
+        updateTcpTargetModeUI();
+        return;
+    }
+
+    const validItems = list
+        .map((item) => {
+            const channel = normalizeTcpChannel(item);
+            if (channel === null) return null;
+            const mac = item.mac || item.address || item.ip || '--';
+            return { channel, mac };
+        })
+        .filter(Boolean);
+
+    if (validItems.length === 0) {
+        sleTcpAvailableChannels = [];
+        sleTcpManualSelect = false;
+        sleRefs.tcpTargetList.innerHTML = '<p class="text-gray-400 text-sm">暂无已连接设备可选</p>';
+        updateTcpTargetModeUI();
+        return;
+    }
+
+    // 以通道号去重，避免重复渲染同一发送目标
+    const uniqueByChannel = new Map();
+    validItems.forEach((item) => {
+        if (!uniqueByChannel.has(item.channel)) {
+            uniqueByChannel.set(item.channel, item);
+        }
+    });
+    const mergedItems = Array.from(uniqueByChannel.values()).sort((a, b) => a.channel - b.channel);
+    sleTcpAvailableChannels = mergedItems.map((item) => item.channel);
+
+    sleRefs.tcpTargetList.innerHTML = mergedItems.map((item) => `
+        <label class="flex items-center justify-between gap-3 bg-dark-lightest/40 border border-dark-lightest rounded-lg px-3 py-2">
+            <span class="text-gray-300 text-sm">通道 ${item.channel}</span>
+            <span class="text-gray-400 text-xs font-mono">${escapeHtml(item.mac)}</span>
+            <input type="checkbox" class="sle-tcp-target-checkbox w-4 h-4 accent-primary" value="${item.channel}">
+        </label>
+    `).join('');
+    updateTcpTargetModeUI();
+};
+
+const getSelectedTcpChannels = () => {
+    // 收集已勾选通道并去重，作为 announce_id 下发参数
+    const selected = Array.from(document.querySelectorAll('.sle-tcp-target-checkbox:checked'))
+        .map((el) => Number.parseInt(el.value, 10))
+        .filter((val) => Number.isInteger(val));
+    return Array.from(new Set(selected));
+};
+
+const setTcpSendLoading = (loading) => {
+    // 统一控制发送按钮禁用态与 loading 图标
+    if (loading) {
+        sleRefs.tcpSendButton?.setAttribute('disabled', 'true');
+        sleRefs.tcpSendButton?.classList.add('opacity-70', 'cursor-not-allowed');
+        sleRefs.tcpSendLoading?.classList.remove('hidden');
+        return;
+    }
+    sleRefs.tcpSendButton?.removeAttribute('disabled');
+    sleRefs.tcpSendButton?.classList.remove('opacity-70', 'cursor-not-allowed');
+    sleRefs.tcpSendLoading?.classList.add('hidden');
+};
+
+const handleTcpSend = async () => {
+    // TCP client 下发流程：读取选择 -> 参数校验 -> POST -> 通知
+    if (sleTcpAvailableChannels.length === 0) {
+        showNotification('校验失败', '当前没有可发送的已连接设备ID', 'warning');
+        return;
+    }
+
+    const channels = sleTcpManualSelect ? getSelectedTcpChannels() : [...sleTcpAvailableChannels];
+
+    if (sleTcpManualSelect && channels.length === 0) {
+        showNotification('校验失败', '请至少选择一个通道号', 'warning');
+        return;
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), SLE_API_CONFIG.timeout);
+    setTcpSendLoading(true);
+
+    try {
+        const res = await fetch(buildSleUrl('sle_announce_id'), {
+            method: 'POST',
+            signal: controller.signal,
+            headers: {
+                'Content-Type': 'application/json',
+                ...(SLE_API_CONFIG.token ? { Authorization: `Bearer ${SLE_API_CONFIG.token}` } : {})
+            },
+            body: JSON.stringify({ announce_id: channels })
+        });
+        if (!res.ok) throw new Error(`发送失败：${res.status}`);
+
+        const data = await res.json();
+        const success = data.status === 'success' || data.status === true || data.success === true;
+        if (!success) {
+            throw new Error(data.message || '发送失败');
+        }
+
+        showNotification('发送成功', `已向 ${channels.length} 个通道下发消息`, 'success');
+    } catch (err) {
+        showNotification('发送失败', err.message || '无法下发 TCP 消息', 'error');
+    } finally {
+        clearTimeout(timeoutId);
+        setTcpSendLoading(false);
+    }
 };
 
 // 渲染：扫描结果表格，附带连接按钮绑定
@@ -253,7 +423,7 @@ const renderScanResults = (list = []) => {
     bindConnectButtons();
 };
 
-// 请求：基础信息（使用真实 API 接口）
+// 请求：基础信息
 const fetchBasicInfo = async () => {
     sleRefs.basicLoading?.classList.remove('hidden');
     const controller = new AbortController();
@@ -317,10 +487,14 @@ const fetchConnectedDevices = async () => {
         sleLocalConnections.length = 0;
         sleLocalConnections.push(...list);
         saveCachedConnections();
+        // 连接列表更新后同步刷新 TCP 目标通道
+        renderTcpTargetOptions(list);
     } catch (err) {
         console.error('[SLE] 获取已连接设备异常：', err.message);
         // 失败时使用本地缓存
         renderConnectedDevices(sleLocalConnections);
+        // 回退本地缓存时，同步刷新 TCP 目标通道
+        renderTcpTargetOptions(sleLocalConnections);
         if (sleLocalConnections.length === 0) {
             showNotification('获取失败', '无法获取已连接设备，请检查接口或网络', 'warning');
         }
@@ -385,10 +559,17 @@ const handleConnect = async (index, mac, name, buttonEl) => {
         if (!success) throw new Error(data.message || '连接指令执行失败');
         showNotification('连接成功', `已连接到设备 ${name || index}`, 'success');
         // 将当前连接加入本地已连接列表（无查询接口）
+        const connId = Number.parseInt(index, 10);
         const rssiValue = name || '--';
-        sleLocalConnections.push({ mac, rssi: rssiValue });
+        sleLocalConnections.push({
+            mac,
+            rssi: rssiValue,
+            ...(Number.isInteger(connId) ? { conn_id: connId } : {})
+        });
         saveCachedConnections();
         renderConnectedDevices(sleLocalConnections);
+        // 连接成功后立即更新 TCP 目标通道
+        renderTcpTargetOptions(sleLocalConnections);
     } catch (err) {
         showNotification('连接失败', err.message || '无法下发连接指令', 'error');
     } finally {
@@ -421,6 +602,8 @@ const bindSleEvents = () => {
     sleRefs.notificationClose?.addEventListener('click', hideNotification);
     sleRefs.scanButton?.addEventListener('click', fetchScanResults);
     sleRefs.configSubmit?.addEventListener('click', handleConfigSubmit);
+    sleRefs.tcpSendButton?.addEventListener('click', handleTcpSend);
+    sleRefs.tcpToggleSelect?.addEventListener('click', handleTcpToggleSelect);
 };
 
 // 动作：设置 SLE 设备基本信息
@@ -497,6 +680,7 @@ const handleConfigSubmit = async () => {
 const initSlePage = async () => {
     initSleRefs();
     bindSleEvents();
+    renderTcpTargetOptions(sleLocalConnections);
     initTheme();
     await loadSleApiConfig();
     await fetchBasicInfo();

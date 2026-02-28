@@ -238,6 +238,49 @@
                         </div>
                     </form>
                 </div>
+
+                <div id="sle-tcp-card" class="bg-dark-lighter rounded-xl p-6 card-shadow lg:col-span-2">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-xl font-semibold text-white">TCP client</h3>
+                    </div>
+
+                    <div class="grid grid-cols-1 gap-4">
+                        <div class="bg-dark rounded-lg p-4">
+                            <h4 class="text-white font-semibold mb-3">发送区</h4>
+                            <div class="space-y-4">
+                                <div>
+                                    <div class="flex items-center justify-between mb-2 gap-3">
+                                        <p class="text-gray-400 text-sm">目标设备（设备ID）</p>
+                                        <button type="button" id="sle-tcp-toggle-select" class="px-3 py-1 text-sm rounded-lg bg-dark-lightest hover:bg-dark border border-dark-lightest text-gray-300 transition-colors">
+                                            选择通道
+                                        </button>
+                                    </div>
+                                    <p id="sle-tcp-target-mode" class="text-gray-400 text-sm mb-2">默认发送到所有通道</p>
+                                    <div id="sle-tcp-target-panel" class="hidden">
+                                        <div id="sle-tcp-target-list" class="space-y-2">
+                                            <p class="text-gray-400 text-sm">暂无已连接设备可选</p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="flex justify-end">
+                                    <button type="button" id="sle-tcp-send-button" class="bg-primary hover:bg-primary/80 text-white px-6 py-2 rounded-lg transition-colors flex items-center">
+                                        <i class="fa fa-paper-plane mr-2"></i>
+                                        <span>发送</span>
+                                        <span id="sle-tcp-send-loading" class="hidden ml-2"><div class="loader w-4 h-4 border-2 border-white rounded-full"></div></span>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="bg-dark rounded-lg p-4">
+                            <h4 class="text-white font-semibold mb-3">接收区</h4>
+                            <div id="sle-tcp-receive-list" class="space-y-2">
+                                <p class="text-gray-400 text-sm">暂无接收消息</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </section>
     </main>
