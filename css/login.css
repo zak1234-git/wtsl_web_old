@@ -1,0 +1,450 @@
+/* 
+ * 登录页面专用样式 (Login Styles)
+ * 包含：CSS变量定义、全局重置、通用样式
+ * 注意：此文件独立于 base.css 和 layout.css，因为登录页布局特殊
+ * 设计目标：高斯模糊 + 粒子背景 + 右侧登录表单卡片。
+ */
+
+ :root {
+    /* 调色板 */
+    --primary-color: #3498db;
+    --primary-gradient: linear-gradient(90deg, #2b78c6, #3498db, #2b78c6);
+    --text-main: #1f2d3d;
+    --text-secondary: #7f8c8d;
+    --text-label: #34495e;
+    --bg-body: #f0f4f8;
+    --bg-input: rgba(248, 250, 255, 0.9);
+    --border-color: #e1e8ed;
+    
+    /* 字体 */
+    --font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+}
+
+/* 全局重置 */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: var(--font-family);
+}
+
+body {
+    width: 100%;
+    height: 100vh;
+    overflow: hidden;
+    background-color: var(--bg-body);
+    color: #333;
+}
+
+/* 
+ * 布局样式 (Layout Styles)
+ * 包含：主容器、左右分栏、响应式布局
+ */
+
+/* 主布局容器：左右分栏，左侧放动画，右侧放表单 */
+.main-wrapper {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    /* 将背景统一移动到主容器，确保左右一致 */
+    background: linear-gradient(135deg, #f7faff 0%, #d7e4f5 45%, #c8d7ef 100%);
+}
+
+/* 左侧面板：透明背景，仅展示 Canvas 粒子与 Logo 槽位 */
+.left-panel {
+    flex: 6.5;
+    position: relative;
+    overflow: hidden;
+    /* 背景透明，显示主容器背景 */
+    background: transparent;
+}
+
+/* Canvas 背景层 */
+#backgroundCanvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 0;
+}
+
+/* 右侧面板：模糊玻璃容器，承载登录框与背景装饰 */
+.right-panel {
+    flex: 3.5;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+
+    /* 右侧模糊化处理 */
+    /* 半透明白色背景 */
+    background: rgba(255, 255, 255, 0.15);
+    /* 毛玻璃效果：模糊背后的内容 */
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    
+    /* 左侧边框线，增强分割感 */
+    border-left: 1px solid rgba(255, 255, 255, 0.3);
+    box-shadow: -10px 0 30px rgba(0, 0, 0, 0.03);
+}
+
+/* 背景网格纹理：叠加轻量格线和遮罩，营造科技感 */
+.right-panel::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+
+    background-image:
+        linear-gradient(rgba(52, 152, 219, 0.05) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(52, 152, 219, 0.05) 1px, transparent 1px);
+    background-size: 44px 44px;
+
+    /* 边缘遮罩 */
+    mask-image: radial-gradient(circle at 50% 45%, rgba(0,0,0,0.9) 35%, transparent 75%);
+    -webkit-mask-image: radial-gradient(circle at 50% 45%, rgba(0,0,0,0.9) 35%, transparent 75%);
+}
+
+/* 响应式布局：窄屏时上下堆叠，右侧圆角顶部突出 */
+@media (max-width: 900px) {
+    .main-wrapper {
+        flex-direction: column;
+    }
+
+    .left-panel {
+        flex: 0.42;
+    }
+
+    .right-panel {
+        flex: 0.58;
+        border-radius: 28px 28px 0 0;
+        margin-top: -18px;
+    }
+}
+
+/* 右侧背景装饰光斑：彩色模糊圆，轻微浮动动画 */
+.decorations {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    z-index: 0;
+    pointer-events: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.circle {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(45px);
+    opacity: 0.6;
+    animation: float 15s infinite ease-in-out alternate;
+}
+
+.circle-1 {
+    width: 350px;
+    height: 350px;
+    background: linear-gradient(135deg, rgba(52, 152, 219, 0.4) 0%, rgba(41, 128, 185, 0.1) 100%);
+    top: -80px;
+    right: -80px;
+}
+
+.circle-2 {
+    width: 300px;
+    height: 300px;
+    background: linear-gradient(135deg, rgba(155, 89, 182, 0.4) 0%, rgba(142, 68, 173, 0.1) 100%);
+    bottom: -50px;
+    left: -50px;
+    animation-delay: -5s;
+}
+
+@keyframes float {
+    0% { transform: translate(0, 0); }
+    100% { transform: translate(20px, 30px); }
+}
+
+/* 右侧背景装饰：连接圆环，逐层脉冲动画 */
+.connection-rings {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: pulse-rings 12s infinite ease-in-out; /* 添加整体动画 */
+    opacity: 1; /* 提高整体不透明度 */
+}
+
+.ring {
+    position: absolute;
+    border-radius: 50%;
+    border: 1.5px solid rgba(52, 152, 219, 0.25); /* 加粗并加深颜色 */
+    box-shadow: 0 0 25px rgba(52, 152, 219, 0.1); /* 增强光晕 */
+}
+
+.ring-sm {
+    width: 300px;
+    height: 300px;
+    border-width: 2px;
+    border-color: rgba(52, 152, 219, 0.35);
+}
+
+.ring-md {
+    width: 480px;
+    height: 480px;
+    border-width: 1px;
+    border-color: rgba(52, 152, 219, 0.2);
+}
+
+.ring-lg {
+    width: 680px;
+    height: 680px;
+    border-color: rgba(52, 152, 219, 0.15);
+}
+
+/* 轨道效果 */
+.ring-orbit {
+    width: 580px;
+    height: 580px;
+    border: 2px solid rgba(52, 152, 219, 0.1); 
+    animation: fade-ring 6s infinite ease-in-out;
+}
+
+@keyframes fade-ring {
+    0%, 100% { opacity: 0; }
+    50% { opacity: 1; }
+}
+
+@keyframes pulse-rings {
+    0%, 100% {
+        opacity: 0;
+    }
+    25% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0;
+    }
+    75% {
+        opacity: 1;
+    }
+}
+
+.connection-rings .ring-sm {
+    animation: pulse-rings 12s infinite ease-in-out;
+    animation-delay: 0s; /* 最内层圆环 */
+}
+
+.connection-rings .ring-md {
+    animation: pulse-rings 12s infinite ease-in-out;
+    animation-delay: 3s; /* 中间圆环延迟 */
+}
+
+.connection-rings .ring-lg {
+    animation: pulse-rings 12s infinite ease-in-out;
+    animation-delay: 6s; /* 最外层圆环延迟 */
+}
+
+/* 
+ * 组件样式 (Component Styles)
+ * 包含：Logo、登录框、表单元素、按钮
+ */
+
+/* Logo 容器：玻璃拟态方块，预留产品 Logo 放置 */
+.logo-slot {
+    position: absolute;
+    left: 48px;
+    top: 40px;
+    z-index: 2;
+
+    width: 56px;
+    height: 56px;
+    border-radius: 14px;
+
+    /* 玻璃拟态样式 */
+    background: rgba(255, 255, 255, 0.45);
+    border: 1px solid rgba(255, 255, 255, 0.8);
+    backdrop-filter: blur(10px);
+    box-shadow: 0 10px 30px rgba(31, 38, 135, 0.10);
+}
+
+@media (max-width: 900px) {
+    .logo-slot {
+        left: 20px;
+        top: 18px;
+        width: 48px;
+        height: 48px;
+        border-radius: 12px;
+    }
+}
+
+/* 登录框容器：半透明卡片，悬浮阴影，承载表单 */
+.login-container {
+    position: relative;
+    z-index: 1;
+
+    width: min(380px, 86%);
+    padding: 38px 30px;
+
+    background: rgba(255, 255, 255, 0.86);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.9);
+    border-radius: 18px;
+
+    /* 加深阴影，增加悬浮感 */
+    box-shadow: 0 20px 60px rgba(31, 38, 135, 0.15);
+    transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+
+.login-container:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 25px 70px rgba(31, 38, 135, 0.20);
+}
+
+/* 标题区域：产品名称 + 副标题 */
+.login-header {
+    text-align: left;
+    margin-bottom: 26px;
+}
+
+.login-header h2 {
+    color: var(--text-main);
+    font-size: 28px;
+    letter-spacing: 1px;
+    margin-bottom: 6px;
+}
+
+.login-header p {
+    color: var(--text-secondary);
+    font-size: 13px;
+}
+
+/* 表单输入组：label + 输入框 + 焦点高亮线 */
+.input-group {
+    position: relative;
+    margin-bottom: 18px;
+}
+
+.input-group label {
+    display: block;
+    margin-bottom: 8px;
+    color: var(--text-label);
+    font-weight: 600;
+    font-size: 13px;
+}
+
+.input-group input {
+    width: 100%;
+    padding: 12px 14px;
+    font-size: 15px;
+    color: #2c3e50;
+
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    background: var(--bg-input);
+
+    outline: none;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+
+.input-group input:focus {
+    background: #ffffff;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.12);
+}
+
+/* 焦点动画线条：输入聚焦时展开的底部色条 */
+.focus-border {
+    position: absolute;
+    left: 10px;
+    right: 10px;
+    bottom: 6px;
+
+    height: 2px;
+    width: 0;
+    margin: 0 auto;
+
+    background-color: var(--primary-color);
+    border-radius: 999px;
+    transition: width 0.35s ease;
+}
+
+.input-group input:focus ~ .focus-border {
+    width: calc(100% - 20px);
+}
+
+/* 底部操作栏：记住我 + 忘记密码链接 */
+.form-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin: 14px 0 20px;
+    font-size: 13px;
+}
+
+.forgot-password {
+    color: var(--primary-color);
+    text-decoration: none;
+}
+
+.forgot-password:hover {
+    text-decoration: underline;
+}
+
+/* 复选框：使用原生勾选，靠 accent-color 着色 */
+.checkbox-container {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    color: var(--text-secondary);
+}
+
+.checkbox-container input {
+    accent-color: var(--primary-color);
+}
+
+/* 登录按钮：渐变动效 + 圆角 Pill 形态 */
+.login-btn {
+    position: relative;
+    width: 100%;
+    padding: 14px 16px;
+
+    border: none;
+    border-radius: 999px;
+    cursor: pointer;
+
+    color: #fff;
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: 1px;
+
+    background: var(--primary-gradient);
+    background-size: 200% 100%;
+    box-shadow: 0 8px 22px rgba(52, 152, 219, 0.28);
+
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    animation: gradientMove 3.2s linear infinite;
+}
+
+.login-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 12px 28px rgba(52, 152, 219, 0.33);
+}
+
+.login-btn:active {
+    transform: translateY(0);
+}
+
+/* 按钮背景层：当前未启用，保留扩展位 */
+.btn-bg {
+    display: none;
+}
+
+/* 关键帧动画 */
+@keyframes gradientMove {
+    0% { background-position: 100% 0; }
+    100% { background-position: -100% 0; }
+}

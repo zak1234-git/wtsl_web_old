@@ -18,11 +18,48 @@ let API_SERVER = {};
 let API_CONFIG = {};
 let ADV_API_CONFIG = {}; // 高级信息相关接口独立配置，避免污染通用配置
 
+// 场景测试配置（用于说明与接口映射）
+const SCENARIO_TESTS = {
+    throughput: {
+        name: '吞吐量峰值测试',
+        description: '评估链路峰值吞吐能力与短时稳定性，适用于性能基准对比。',
+        apiKey: 'throughputTestUrl'
+    },
+    shortrange: {
+        name: '近距测试',
+        description: '在近距离环境下验证连接稳定性与速率表现，适用于实验室调试。',
+        apiKey: 'shortRangeTestUrl'
+    },
+    remoterange: {
+        name: '远距测试',
+        description: '在远距离场景评估覆盖能力与链路稳定性，适用于外场验证。',
+        apiKey: 'remoteRangeTestUrl'
+    },
+    lowpower: {
+        name: '低功耗测试',
+        description: '验证低功耗模式下的连接表现与耗能策略，适用于功耗评估。',
+        apiKey: 'lowPowerTestUrl'
+    },
+    lowlatency: {
+        name: '低时延测试',
+        description: '验证低时延场景下的传输稳定性与时延性能，适用于实时业务评估。',
+        apiKey: 'lowLatencyTestUrl'
+    }
+};
+
+// 当前选中的场景测试
+let selectedScenarioId = null;
+
 // 构造高级信息接口地址，使用与基础接口相同的IP/端口
 function setAdvApiConfig(ip, port, token = '', timeout = 10000) {
     ADV_API_CONFIG = {
         getAdvInfoUrl: `http://${ip}:${port}/api/v1/nodes/0/advinfo`,
         setAdvInfoUrl: `http://${ip}:${port}/api/v1/nodes/0/advinfo`,
+        throughputTestUrl: `http://${ip}:${port}/api/v1/nodes/0/throughput_test`,
+        shortRangeTestUrl: `http://${ip}:${port}/api/v1/nodes/0/shortrange_test`,
+        remoteRangeTestUrl: `http://${ip}:${port}/api/v1/nodes/0/remoterange_test`,
+        lowPowerTestUrl: `http://${ip}:${port}/api/v1/nodes/0/lowpow_test`,
+        lowLatencyTestUrl: `http://${ip}:${port}/api/v1/nodes/0/lowlatency_test`,
         token: token || '',
         timeout: timeout || 10000
     };
@@ -134,6 +171,11 @@ const RANGE_OPT_LABELS = {
     1: '开启'
 };
 
+const ACS_ENABLE_LABELS = {
+    0: '关闭',
+    1: '开启'
+};
+
 // API服务器配置 - 提取IP和端口为独立变量，方便修改
 //const API_SERVER = {
 //    ip: '',  // API服务器IP地址
@@ -228,31 +270,36 @@ document.addEventListener('DOMContentLoaded', async () => {
                 autoJoinLoading: document.getElementById('auto-join-loading'),
                 autoJoinGroup: document.getElementById('auto-join-group'),
 
-                // 场景测试元素
-                throughputTestBtn: document.getElementById('throughput-test-btn'),
-                throughputUp: document.getElementById('throughput-up'),
-                throughputDown: document.getElementById('throughput-down'),
-                nearTestBtn: document.getElementById('near-test-btn'),
-                midTestBtn: document.getElementById('mid-test-btn'),
-                farTestBtn: document.getElementById('far-test-btn'),
-                lowPowerTestBtn: document.getElementById('low-power-test-btn'),
-                highPowerTestBtn: document.getElementById('high-power-test-btn'),
+                // 场景配置元素（卡片选择 + 说明区）
+                scenarioCards: document.querySelectorAll('.scenario-card'),
+                scenarioTitle: document.getElementById('scenario-title'),
+                scenarioDesc: document.getElementById('scenario-desc'),
+                scenarioStartBtn: document.getElementById('scenario-start-btn'),
+                scenarioStartHint: document.getElementById('scenario-start-hint'),
+                scenarioSelectedBadge: document.getElementById('scenario-selected-badge'),
+                scenarioNetworkDot: document.getElementById('scenario-network-dot'),
+                scenarioNetworkText: document.getElementById('scenario-network-text'),
+                scenarioDeviceType: document.getElementById('scenario-device-type'),
 
                 // 高级参数表单元素
+                cellIdInput: document.getElementById('settings-cell-id'),
                 cpTypeSelect: document.getElementById('settings-cp-type'),
                 symbolTypeSelect: document.getElementById('settings-symbol-type'),
                 sysmsgPeriodSelect: document.getElementById('settings-sysmsg-period'),
                 sCfgIdxSelect: document.getElementById('settings-s-cfg-idx'),
                 powInput: document.getElementById('settings-pow'),
                 rangeOptSelect: document.getElementById('settings-range-opt'),
+                acsenableSelect: document.getElementById('settings-acs-enable'),
                 symbolTypeHint: document.getElementById('symbol-type-hint'),
 
                 // 高级信息展示元素
+                deviceCellId: document.getElementById('device-cell-id'),
                 deviceCpType: document.getElementById('device-cp-type'),
                 deviceSymbolType: document.getElementById('device-symbol-type'),
                 deviceSysmsgPeriod: document.getElementById('device-sysmsg-period'),
                 deviceSCfgIdx: document.getElementById('device-s-cfg-idx'),
-                deviceRangeOpt: document.getElementById('device-range-opt')
+                deviceRangeOpt: document.getElementById('device-range-opt'),
+                deviceacsenable: document.getElementById('device-acs-enable')
         };
 
             initThemeControls();
@@ -394,6 +441,7 @@ async function initApiConfig() {
       getUpgradeHistoryUrl: `http://${API_SERVER.ip}:${API_SERVER.port}/api/v1/getUpgradeHistory`,
       uploadFirmwareUrl: `http://${API_SERVER.ip}:${API_SERVER.port}/api/v1/nodes/0/firmware/upload`, // 上传API端点
       autoJoinNetworkUrl: `http://${API_SERVER.ip}:${API_SERVER.port}/api/v1/nodes/0/autoJoinNetwork`,
+      timeSyncUrl: `http://${API_SERVER.ip}:${API_SERVER.port}/api/v1/nodes/0/timesync`,
       timeout: 10000
     };
 
@@ -417,6 +465,7 @@ async function initApiConfig() {
       getUpgradeHistoryUrl: 'http://localhost:8080/api/v1/getUpgradeHistory',
       uploadFirmwareUrl: 'http://localhost:8080/api/v1/nodes/0/firmware/upload', // 上传API端点
       autojoinNetworkUrl: `http://localhost:8080/api/v1/nodes/0/autojoinNetwork`,
+      timeSyncUrl: 'http://localhost:8080/api/v1/nodes/0/timesync',
       timeout: 10000
     };
         setAdvApiConfig('localhost', '8080', '', API_CONFIG.timeout);
@@ -507,6 +556,67 @@ function init() {
     initAutoRefreshToggle();
 
     updateManualScanButtonState();
+    syncFooterWithCurrentPage();
+}
+
+// 格式化本地时间为 "YYYY-MM-DD HH:mm:ss"
+function formatLocalTimeForSync(date = new Date()) {
+    const pad = (num) => String(num).padStart(2, '0');
+    const year = date.getFullYear();
+    const month = pad(date.getMonth() + 1);
+    const day = pad(date.getDate());
+    const hours = pad(date.getHours());
+    const minutes = pad(date.getMinutes());
+    const seconds = pad(date.getSeconds());
+    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+}
+
+// 时间同步：使用本地时间向后端同步
+async function syncTimeWithServer() {
+    if (!API_CONFIG?.timeSyncUrl) return;
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), API_CONFIG.timeout);
+    try {
+        const res = await fetch(API_CONFIG.timeSyncUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(API_CONFIG.token ? { Authorization: `Bearer ${API_CONFIG.token}` } : {})
+            },
+            body: JSON.stringify({ time: formatLocalTimeForSync() }),
+            signal: controller.signal
+        });
+        if (!res.ok) throw new Error(`时间同步失败: ${res.status}`);
+        const result = await res.json();
+        if (result?.status && result.status !== 'success') {
+            throw new Error(result.message || '时间同步失败');
+        }
+    } catch (err) {
+        console.warn('[TimeSync] 时间同步失败:', err.message || err);
+    } finally {
+        clearTimeout(timeoutId);
+    }
+}
+
+/**
+ * 根据当前可见页面同步页脚样式
+ */
+function syncFooterWithCurrentPage() {
+    const visibleSection = Array.from(elements.pageSections || []).find(section => !section.classList.contains('hidden'));
+    const pageId = visibleSection?.id || 'device-display';
+    updateFooterMode(pageId);
+}
+
+/**
+ * 更新页脚模式（设备设置页固定高度）
+ */
+function updateFooterMode(pageId) {
+    const footer = document.getElementById('site-footer');
+    document.body.dataset.page = pageId;
+    if (footer) {
+        footer.classList.toggle('py-6', pageId !== 'scenario-test');
+    }
 }
 
 // 设置事件监听器
@@ -542,7 +652,7 @@ function setupEventListeners() {
     elements.retryLoad?.addEventListener('click', fetchDeviceInfo);
     
     // 节点扫描相关事件
-    elements.scanGNodesButton?.addEventListener('click', scanGNodes);
+    elements.scanGnodesButton?.addEventListener('click', scanGNodes);
     elements.backToSettingsButton?.addEventListener('click', () => {
         switchPage('device-settings');
     });
@@ -590,19 +700,169 @@ function setupEventListeners() {
     elements.cpTypeSelect?.addEventListener('change', () => updateSymbolTypeOptions());
     elements.sCfgIdxSelect?.addEventListener('change', () => updateSymbolTypeOptions());
 
-    // 场景测试
-    elements.throughputTestBtn?.addEventListener('click', handleThroughputTest);
-    elements.nearTestBtn?.addEventListener('click', () => handleScenarioTest('近距测试'));
-    elements.midTestBtn?.addEventListener('click', () => handleScenarioTest('中距测试'));
-    elements.farTestBtn?.addEventListener('click', () => handleScenarioTest('远距测试'));
-    elements.lowPowerTestBtn?.addEventListener('click', () => handleScenarioTest('低功耗测试'));
-    elements.highPowerTestBtn?.addEventListener('click', () => handleScenarioTest('高功耗测试'));
+    // 场景配置：卡片选择与开始测试
+    initScenarioSelection();
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
     const autoJoinNetworkEl = document.getElementById('auto-join-network');
     if (autoJoinNetworkEl) {
         autoJoinNetworkEl.addEventListener('change', handleAutoJoinChange);
+    }
+}
+
+/**
+ * 初始化场景配置卡片交互逻辑
+ */
+function initScenarioSelection() {
+    const cards = elements.scenarioCards;
+    if (!cards || cards.length === 0) return;
+
+    cards.forEach(card => {
+        card.addEventListener('click', () => {
+            const scenarioId = card.dataset.scenario || null;
+            setScenarioSelection(scenarioId);
+        });
+    });
+
+    elements.scenarioStartBtn?.addEventListener('click', () => {
+        if (!selectedScenarioId) return;
+        const config = SCENARIO_TESTS[selectedScenarioId];
+        if (!config) return;
+
+        const apiUrl = ADV_API_CONFIG[config.apiKey];
+        postScenarioTest(apiUrl, config.name, elements.scenarioStartBtn);
+    });
+
+    // 初始化默认状态
+    setScenarioSelection(null);
+    updateScenarioDeviceStatus();
+}
+
+/**
+ * 设置当前选中的场景测试
+ */
+function setScenarioSelection(scenarioId) {
+    selectedScenarioId = scenarioId && SCENARIO_TESTS[scenarioId] ? scenarioId : null;
+
+    elements.scenarioCards?.forEach(card => {
+        const isActive = selectedScenarioId && card.dataset.scenario === selectedScenarioId;
+        card.classList.toggle('scenario-card--selected', isActive);
+        card.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+    });
+
+    updateScenarioInfo();
+}
+
+/**
+ * 更新右侧说明区信息
+ */
+function updateScenarioInfo() {
+    const info = selectedScenarioId ? SCENARIO_TESTS[selectedScenarioId] : null;
+
+    if (!elements.scenarioTitle || !elements.scenarioDesc || !elements.scenarioStartBtn) return;
+
+    if (!info) {
+        elements.scenarioTitle.textContent = '';
+        elements.scenarioTitle.classList.add('hidden');
+        elements.scenarioDesc.textContent = '请选择左侧测试类型，系统将加载对应说明并准备测试环境。';
+        elements.scenarioStartBtn.disabled = true;
+        elements.scenarioStartBtn.classList.add('btn-disabled');
+        if (elements.scenarioSelectedBadge) {
+            elements.scenarioSelectedBadge.textContent = '未选择';
+        }
+        if (elements.scenarioStartHint) {
+            elements.scenarioStartHint.textContent = '';
+            elements.scenarioStartHint.classList.add('hidden');
+        }
+        return;
+    }
+
+    elements.scenarioTitle.textContent = info.name;
+    elements.scenarioTitle.classList.remove('hidden');
+    elements.scenarioDesc.textContent = info.description;
+    elements.scenarioStartBtn.disabled = false;
+    elements.scenarioStartBtn.classList.remove('btn-disabled');
+
+    if (elements.scenarioSelectedBadge) {
+        elements.scenarioSelectedBadge.textContent = '已选择';
+    }
+    if (elements.scenarioStartHint) {
+        elements.scenarioStartHint.textContent = '';
+        elements.scenarioStartHint.classList.add('hidden');
+    }
+}
+
+/**
+ * 判断是否已组网（基于 currentDevice 内的连接信息）
+ */
+function getNetworkStatusFromCurrentDevice() {
+    const listFields = [
+        currentDevice.connected_devices,
+        currentDevice.conn_list,
+        currentDevice.connected_list,
+        currentDevice.peer_list,
+        currentDevice.bss_list
+    ];
+
+    const countFields = [
+        currentDevice.connected_num,
+        currentDevice.conn_num,
+        currentDevice.peer_num,
+        currentDevice.bss_num,
+        currentDevice.sta_num
+    ];
+
+    const flagFields = [
+        currentDevice.connected,
+        currentDevice.linked,
+        currentDevice.link_status,
+        currentDevice.network_ok,
+        currentDevice.connected_flag,
+        currentDevice.conn_state
+    ];
+
+    const hasList = listFields.some(list => Array.isArray(list) && list.length > 0);
+    const hasCount = countFields.some(count => typeof count === 'number' && count > 0);
+    const hasFlag = flagFields.some(flag => flag === 1 || flag === true);
+
+    if (hasList || hasCount || hasFlag) return true;
+
+    // 兜底：若当前设备中无明确信息，则参考已连接列表
+    return Array.isArray(connectedDevices) && connectedDevices.length > 0;
+}
+
+/**
+ * 更新场景配置区设备状态显示
+ */
+function updateScenarioDeviceStatus() {
+    const dot = elements.scenarioNetworkDot;
+    const text = elements.scenarioNetworkText;
+    const typeEl = elements.scenarioDeviceType;
+
+    if (dot && text) {
+        const isConnected = getNetworkStatusFromCurrentDevice();
+        dot.classList.toggle('bg-success', isConnected);
+        dot.classList.toggle('bg-danger', !isConnected);
+        text.textContent = isConnected ? '已组网' : '未组网';
+    }
+
+    if (typeEl) {
+        const rawType = currentDevice.slb_role || currentDevice.sub_role || currentDevice.type;
+        let displayType = '未知';
+
+        if (typeof rawType === 'string') {
+            const lower = rawType.toLowerCase();
+            if (lower.includes('g')) displayType = 'G';
+            else if (lower.includes('t')) displayType = 'T';
+            else displayType = rawType.toUpperCase();
+        } else if (rawType === 0) {
+            displayType = 'G';
+        } else if (rawType === 1) {
+            displayType = 'T';
+        }
+
+        typeEl.textContent = displayType;
     }
 }
 
@@ -1245,6 +1505,7 @@ async function handleManualScan() {
 }
 
 async function fetchDeviceInfo() {
+    await syncTimeWithServer();
     // 显示加载状态
     elements.deviceLoading?.classList.remove('hidden');
     elements.deviceErrorHint?.classList.add('hidden');
@@ -1373,7 +1634,7 @@ async function fetchDeviceInfo() {
     }
 }
 
-// 获取高级信息（cp_type / symbol_type / sysmsg_period / s_cfg_idx / range_opt 等）
+// 获取高级信息（cp_type / symbol_type / sysmsg_period / s_cfg_idx / range_opt / acs_enable 等）
 async function fetchAdvancedInfo(silent = false, skipUiUpdate = false) {
     // 检查高级接口配置是否已初始化
     if (!ADV_API_CONFIG.getAdvInfoUrl) {
@@ -1426,11 +1687,13 @@ async function fetchAdvancedInfo(silent = false, skipUiUpdate = false) {
         // 更新当前设备信息
         currentDevice = {
             ...currentDevice,
+            cell_id: advData.cell_id,
             cp_type: advData.cp_type,
             symbol_type: advData.symbol_type,
             sysmsg_period: advData.sysmsg_period,
             s_cfg_idx: advData.s_cfg_idx,
             range_opt: advData.range_opt,
+            acs_enable: advData.acs_enable,
             tx_power: txPower,
             pow: txPower ?? currentDevice.pow
         };
@@ -1527,12 +1790,18 @@ function updateDeviceDisplay() {
     }
 
     // 高级参数显示
+    const deviceCellIdEl = elements.deviceCellId;
     const deviceCpTypeEl = elements.deviceCpType;
     const deviceSymbolTypeEl = elements.deviceSymbolType;
     const deviceSysmsgPeriodEl = elements.deviceSysmsgPeriod;
     const deviceSCfgIdxEl = elements.deviceSCfgIdx;
     const deviceRangeOptEl = elements.deviceRangeOpt;
+    const deviceacsenableEl = elements.deviceacsenable;
 
+    if (deviceCellIdEl) {
+        const cellId = currentDevice.cell_id;
+        deviceCellIdEl.textContent = cellId !== undefined ? cellId : '未知';
+    }
     if (deviceCpTypeEl) {
         const cpType = currentDevice.cp_type;
         deviceCpTypeEl.textContent = cpType !== undefined ? (CP_TYPE_LABELS[cpType] || cpType) : '未知';
@@ -1553,6 +1822,22 @@ function updateDeviceDisplay() {
         const rangeOpt = currentDevice.range_opt;
         deviceRangeOptEl.textContent = rangeOpt !== undefined ? (RANGE_OPT_LABELS[rangeOpt] || rangeOpt) : '未知';
     }
+    if (deviceacsenableEl) {
+        const acsenable = currentDevice.acs_enable;
+        deviceacsenableEl.textContent = acsenable !== undefined ? (ACS_ENABLE_LABELS[acsenable] || acsenable) : '未知';
+    }
+
+    // 自动避让开关仅对 G 节点显示
+    if (deviceacsenableEl) {
+        const deviceType = currentDevice.slb_role || currentDevice.sub_role || (currentDevice.type === 0 ? 'gnode' : 'tnode');
+        const acsContainer = deviceacsenableEl.closest('.bg-dark');
+        if (acsContainer) {
+            acsContainer.classList.toggle('hidden', deviceType === 'tnode');
+        }
+    }
+
+    // 同步场景配置区的设备状态显示
+    updateScenarioDeviceStatus();
 
     updateManualScanButtonState();
 }
@@ -1587,12 +1872,14 @@ function populateSettingsForm() {
     const serveripEl = document.getElementById('setting-server-ip');
     const serverportEl = document.getElementById('setting-server-port');
     const versionEl = document.getElementById('settings-version');
+    const cellIdEl = elements.cellIdInput;
     const cpTypeEl = elements.cpTypeSelect;
     const sCfgIdxEl = elements.sCfgIdxSelect;
     const symbolTypeEl = elements.symbolTypeSelect;
     const sysmsgPeriodEl = elements.sysmsgPeriodSelect;
     const powEl = elements.powInput;
     const rangeOptEl = elements.rangeOptSelect;
+    const acsenableEl = elements.acsenableSelect;
     
     // 使用当前设备数据或默认值，确保属性名一致
     if (typeEl) {
@@ -1607,6 +1894,7 @@ function populateSettingsForm() {
     if (serveripEl) serveripEl.value = currentDevice.net_manage_ip;
     if (serverportEl) serverportEl.value = currentDevice.log_port;
     if (versionEl) versionEl.value = currentDevice.version;
+    if (cellIdEl && currentDevice.cell_id !== undefined) cellIdEl.value = currentDevice.cell_id;
     if (cpTypeEl && currentDevice.cp_type !== undefined) cpTypeEl.value = currentDevice.cp_type;
     if (sCfgIdxEl && currentDevice.s_cfg_idx !== undefined) sCfgIdxEl.value = currentDevice.s_cfg_idx;
     if (sysmsgPeriodEl && currentDevice.sysmsg_period !== undefined) sysmsgPeriodEl.value = currentDevice.sysmsg_period;
@@ -1617,6 +1905,23 @@ function populateSettingsForm() {
         }
     }
     if (rangeOptEl && currentDevice.range_opt !== undefined) rangeOptEl.value = currentDevice.range_opt;
+    if (acsenableEl && currentDevice.acs_enable !== undefined) acsenableEl.value = currentDevice.acs_enable;
+
+    // 设备设置页：T节点隐藏整个高级参数区域（含保存按钮）
+    const isTNode = (currentDevice.slb_role || currentDevice.sub_role || (currentDevice.type === 0 ? 'gnode' : 'tnode')) === 'tnode';
+    const advancedSection = document.querySelector('#device-settings .border-t.border-dark-lightest.pt-4');
+    const advancedAction = document.getElementById('settings-advanced-submit')?.closest('div.flex.justify-end.mt-6');
+    if (advancedSection) advancedSection.classList.toggle('hidden', isTNode);
+    if (advancedAction) advancedAction.classList.toggle('hidden', isTNode);
+
+    // 设备设置：自动避让开关仅对 G 节点显示
+    if (acsenableEl) {
+        const deviceType = currentDevice.slb_role || currentDevice.sub_role || (currentDevice.type === 0 ? 'gnode' : 'tnode');
+        const acsSettingContainer = acsenableEl.closest('div');
+        if (acsSettingContainer) {
+            acsSettingContainer.classList.toggle('hidden', deviceType === 'tnode');
+        }
+    }
 
     updateManualScanButtonState();
     
@@ -1845,6 +2150,8 @@ window.addEventListener('beforeunload', function() {
 
 // 页面切换
 function switchPage(pageId) {
+    updateFooterMode(pageId);
+
     // 确保节点扫描页面元素存在
     const nodeScanSection = document.getElementById('node-scan');
     if (nodeScanSection) {
@@ -2040,15 +2347,17 @@ function getChannelSupportedBandwidths(channel) {
 // 保存高级参数
 async function handleSaveAdvancedSettings() {
     // 获取高级参数表单中的各个元素
+    const cellIdEl = elements.cellIdInput;
     const cpTypeEl = elements.cpTypeSelect; 
     const sCfgIdxEl = elements.sCfgIdxSelect; 
     const symbolTypeEl = elements.symbolTypeSelect; 
     const sysmsgPeriodEl = elements.sysmsgPeriodSelect; 
     const powEl = elements.powInput; 
     const rangeOptEl = elements.rangeOptSelect; 
+    const acsenableEl = elements.acsenableSelect;
 
     // 检查是否所有控件都已正确加载
-    if (!cpTypeEl || !sCfgIdxEl || !symbolTypeEl || !sysmsgPeriodEl || !rangeOptEl) {
+    if (!cellIdEl || !cpTypeEl || !sCfgIdxEl || !symbolTypeEl || !sysmsgPeriodEl || !rangeOptEl || !acsenableEl) {
         showNotification('操作失败', '高级参数控件未正确加载', true);
         return;
     }
@@ -2057,17 +2366,24 @@ async function handleSaveAdvancedSettings() {
     updateSymbolTypeOptions();
 
     // 获取表单中的值
+    const cellId = parseInt(cellIdEl.value);
     const cpType = parseInt(cpTypeEl.value); 
     const sCfgIdx = parseInt(sCfgIdxEl.value); 
     const symbolType = parseInt(symbolTypeEl.value); 
     const sysmsgPeriod = parseInt(sysmsgPeriodEl.value); 
     const rangeOpt = parseInt(rangeOptEl.value); 
+    const acsenable = parseInt(acsenableEl.value);
     const powValueRaw = powEl?.value ?? ''; 
     const powValue = powValueRaw === '' ? null : parseInt(powValueRaw); 
 
     // 验证表单数据是否完整
-    if (Number.isNaN(cpType) || Number.isNaN(sCfgIdx) || Number.isNaN(symbolType) || Number.isNaN(sysmsgPeriod) || Number.isNaN(rangeOpt)) {
+    if (Number.isNaN(cellId) || Number.isNaN(cpType) || Number.isNaN(sCfgIdx) || Number.isNaN(symbolType) || Number.isNaN(sysmsgPeriod) || Number.isNaN(rangeOpt) || Number.isNaN(acsenable)) {
         showNotification('操作失败', '请完整选择高级参数', true);
+        return;
+    }
+
+    if (cellId < 1 || cellId > 20) {
+        showNotification('操作失败', 'cell_id 范围需为 1-20', true);
         return;
     }
 
@@ -2088,11 +2404,13 @@ async function handleSaveAdvancedSettings() {
     try {
         // 准备发送的数据
         const postData = {
+            cell_id: cellId,
             cp_type: cpType,
             s_cfg_idx: sCfgIdx,
             symbol_type: symbolType,
             sysmsg_period: sysmsgPeriod,
-            range_opt: rangeOpt
+            range_opt: rangeOpt,
+            acs_enable: acsenable
         };
 
         // 如果功率值不为空，则添加到数据中
@@ -2128,11 +2446,13 @@ async function handleSaveAdvancedSettings() {
         // 更新当前设备信息
         currentDevice = {
             ...currentDevice,
+            cell_id: cellId,
             cp_type: cpType,
             s_cfg_idx: sCfgIdx,
             symbol_type: symbolType,
             sysmsg_period: sysmsgPeriod,
             range_opt: rangeOpt,
+            acs_enable: acsenable,
             tx_power: powValue === null ? currentDevice.tx_power : powValue,
             pow: powValue === null ? currentDevice.pow : powValue
         };
@@ -2154,29 +2474,70 @@ async function handleSaveAdvancedSettings() {
     }
 }
 
-// 吞吐量峰值测试（前端占位模拟）
-function handleThroughputTest() {
-    const btn = elements.throughputTestBtn;
-    if (!btn) return;
+// 场景测试：真实POST请求，带开发者确认提示
+async function postScenarioTest(apiUrl, label, buttonEl) {
+    if (!apiUrl) {
+        showNotification('场景测试', `${label} API未配置`, true);
+        return;
+    }
 
-    const prevLabel = btn.innerHTML;
-    btn.disabled = true;
-    btn.innerHTML = '<i class="fa fa-spinner fa-spin mr-2"></i>测试中...';
+    const btn = buttonEl || null;
+    const prevLabel = btn ? btn.innerHTML : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa fa-spinner fa-spin mr-2"></i>测试中...';
+    }
 
-    if (elements.throughputUp) elements.throughputUp.value = '测试中...';
-    if (elements.throughputDown) elements.throughputDown.value = '测试中...';
+    console.info(`[场景测试] 发送POST请求: ${label} -> ${apiUrl}`);
 
-    setTimeout(() => {
-        if (elements.throughputUp) elements.throughputUp.value = '186.4';
-        if (elements.throughputDown) elements.throughputDown.value = '172.9';
-        btn.disabled = false;
-        btn.innerHTML = prevLabel;
-        showNotification('场景测试', '吞吐量峰值测试已触发，等待后端结果', false);
-    }, 1200);
-}
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), ADV_API_CONFIG.timeout || 10000);
 
-function handleScenarioTest(label) {
-    showNotification('场景测试', `${label} 已触发，等待后端结果`, false);
+    try {
+        const response = await fetch(apiUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({}),
+            signal: controller.signal
+        });
+
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+            throw new Error(`HTTP错误: ${response.status} ${response.statusText}`);
+        }
+
+        let result = null;
+        try {
+            result = await response.json();
+        } catch (err) {
+            result = null;
+        }
+
+        if (result && result.status !== undefined) {
+            const statusValue = String(result.status).toLowerCase();
+            const ok = statusValue === 'true' || statusValue === 'success';
+            if (!ok) {
+                throw new Error(result.message || `后端返回失败状态: ${result.status}`);
+            }
+        }
+
+        console.info(`[场景测试] 请求成功: ${label}`, result || '无返回体');
+        showNotification('场景测试', `${label} 请求成功`, false);
+    } catch (error) {
+        const errMsg = error.name === 'AbortError'
+            ? `请求超时（${(ADV_API_CONFIG.timeout || 10000) / 1000}秒）`
+            : `请求失败：${error.message}`;
+        console.error(`[场景测试] 请求失败: ${label}`, error);
+        showNotification('场景测试', `${label} ${errMsg}`, true);
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = prevLabel;
+        }
+    }
 }
 
 //扫描附近的G节点

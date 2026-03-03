@@ -1,0 +1,58 @@
+基础信息
+基础路径：/api/v1
+数据格式：请求/响应均使用JSON
+鉴权方式：Authrization: Bearer <token>
+状态码规范：
+	200 OK：请求成功
+	201 Created：资源创建成功
+	400 Bad Request：请求参数错误
+	401 Unauthorized：未认证（Token 无效/缺失）
+	403 Forbidden：无权限
+	404 Not Found：资源不存在
+	500 Internal Server Error：服务器错误
+完整请求格式如下：{method} http://{ip}:{port}/api/v1/{url}	目前{method}支持GET, POST
+
+sle设备扫描
+URL： /nodes/{id}/sle_scan
+方法： GET
+请求头： Authorization: Bearer <token>
+请求参数：无
+响应（200 OK）：
+json
+{
+"status": "success",
+"data": [{
+"rssi": -44,
+"mac": "d:0:0:0:0:13"
+}, {
+"rssi": -84,
+"mac": "6:8:10:0:0:11"
+}]
+}
+
+获取SLE设备基本信息
+URL： /nodes/{id}/sle_basicinfo
+方法： GET
+请求头： Authorization: Bearer <token>
+请求参数：无
+响应（200 OK）：
+json
+{
+"status": "success",
+"data": {
+"sle_type": 6,
+"sle_name": "2981_sle",
+"mac": "6:8:10:0:0:21"
+}
+}
+
+设置sle设备基本信息
+URL： /nodes/{id}/sle_basicinfo
+方法： POST
+请求头： Authorization: Bearer <token>
+请求体如下
+｛
+"sle_type": 6,
+"sle_name": "slesjsjj"
+获取连接信息之前给过
+
