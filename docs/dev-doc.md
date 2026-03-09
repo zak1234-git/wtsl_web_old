@@ -78,6 +78,7 @@
 | `localStorage('autoRefreshEnabled')` | SLB 自动刷新开关状态 | slb.html |
 | `localStorage('sle-basic-info')` | SLE 基本信息缓存（接口失败时回退） | sle.html |
 | `sessionStorage('sle-connected-devices')` | SLE 已连接设备列表缓存（标签页内保留，关闭即清） | sle.html |
+| `sessionStorage('_auth')` | 登录会话令牌（随机字符串），缺失时管理页拒绝访问 | index.html 写入 / slb.html 、sle.html 读取 |
 | 页面跳转（`window.location.href`） | 登录成功后从 index.html → slb.html | index.html → slb.html |
 | HTML `<a>` 链接 | SLB ↔ SLE 页面切换（顶部导航标签） | slb.html ↔ sle.html |
 
@@ -230,7 +231,7 @@ SLE: fetchConnectedDevices() / handleConnect()
 - 作用：绑定登录表单 submit 事件，执行前端校验
 - 核心方法：
   - `handleSubmit(e)`：获取输入、模拟延迟 800ms、比对硬编码凭据
-  - `onLoginSuccess()`：将页面跳转至 `slb.html`
+  - `onLoginSuccess()`：生成随机标识符写入 `sessionStorage('_auth')`，随后跳转至 `slb.html`
   - `onLoginFailure()`：弹出 `alert()` 提示错误，清空密码框
 - 副作用：修改按钮文本状态（"正在连接..." / "登录成功"）
 </details>
@@ -604,7 +605,7 @@ SLE: fetchConnectedDevices() / handleConnect()
 - [ ] SLB 和 SLE 页面的主题覆盖 CSS 大量重复（`slb.html` 和 `sle.html` 的内联 `<style>` 块几乎相同），建议抽取到公共 CSS 文件
 - [ ] main.js 超过 2800 行且全为全局函数/变量，建议按功能拆分模块
 - [ ] `config.json` 文件不在版本库中 [需确认: 是否应提供示例配置 config.example.json]
-- [ ] 登录页无 token/session 机制，SLB/SLE 页面可直接通过 URL 访问而绕过登录
+- [x] 登录页无 token/session 机制，SLB/SLE 页面可直接通过 URL 访问而绕过登录（已修复：2026-03-05 新增 sessionStorage 令牌守卫）
 
 ---
 
@@ -614,3 +615,4 @@ SLE: fetchConnectedDevices() / handleConnect()
 |------|--------|----------|----------|
 | 2026-02-28 | AI Agent | 初始文档生成 | 全部 |
 | 2026-03-03 | AI Agent | Edge42 兼容性重构：移除业务脚本中的 `?.`/`??`，请求超时改为兼容封装，Tailwind 运行时改为按需加载并新增 fallback CSS | `js/main.js`、`js/sle.js`、`slb.html`、`sle.html`、`css/edge42-fallback.css` |
+| 2026-03-05 | AI Agent | 访问控制：登录成功后写入 sessionStorage 令牌，slb.html / sle.html head 首行增加令牌守卫，未登录直接访问时重定向至登录页 | `js/login.js`、`slb.html`、`sle.html` |

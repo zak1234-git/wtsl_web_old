@@ -13,7 +13,7 @@ let SLE_API_CONFIG = {
     endpoints: {
         basicInfo: '/api/v1/nodes/0/sle_basicinfo',
         setbasicinfo: '/api/v1/nodes/0/sle_basicinfo',
-        connected: '/api/v1/nodes/0/sle_conninfo', // 已连接设备查询接口
+        connected: '/api/v1/nodes/0/sle_conninfo',
         scan: '/api/v1/nodes/0/sle_scan', // 扫描信息与已连接设备共用 sle_scan
         connect: '/api/v1/nodes/0/sle_connect',
         sle_announce_id: '/api/v1/nodes/0/sle_announce_id'
@@ -38,7 +38,7 @@ const sleDemoData = {
 */
 
 // 基本信息临时占位数据（接口未就绪时使用）
-const sleBasicMock = { name: 'SLE-DEV-01', mac: 'b:b:b:b:80:1', sle_type: 5 };
+const sleBasicMock = { sle_name: 'SLE-DEV-01', mac: 'b:b:b:b:80:1', sle_type: 5 };
 
 let sleCurrentType = null;
 let slePendingReboot = false;
@@ -69,6 +69,69 @@ const sleLocalConnections = loadCachedConnections();
 
 // UI 引用（集中获取，避免重复查询 DOM）
 const sleRefs = {};
+
+/**
+ * 安全绑定事件：节点存在时再绑定，避免空引用异常。
+ */
+const addEventListenerIf = (element, eventName, handler) => {
+    if (element) {
+        element.addEventListener(eventName, handler);
+    }
+};
+
+/**
+ * Edge42 兼容：不要使用 toggleAttribute。
+ * 统一改为 setAttribute/removeAttribute 控制布尔属性。
+ */
+const setElementDisabled = (element, disabled) => {
+    if (!element) return;
+    if (disabled) {
+        element.setAttribute('disabled', 'true');
+    } else {
+        element.removeAttribute('disabled');
+    }
+};
+
+/**
+ * 兼容超时请求封装：
+ * - 优先使用 AbortController 取消请求；
+ * - 旧环境回退为 Promise.race 超时。
+ */
+const fetchWithTimeoutCompat = (url, options, timeoutMs) => {
+    const resolvedTimeout = timeoutMs || SLE_API_CONFIG.timeout || 10000;
+    const finalOptions = options || {};
+
+    if (typeof AbortController !== 'undefined') {
+        const controller = new AbortController();
+        finalOptions.signal = controller.signal;
+        const timer = setTimeout(() => controller.abort(), resolvedTimeout);
+        return fetch(url, finalOptions).then((response) => {
+            clearTimeout(timer);
+            return response;
+        }, (error) => {
+            clearTimeout(timer);
+            throw error;
+        });
+    }
+
+    let timer = null;
+    return Promise.race([
+        fetch(url, finalOptions),
+        new Promise((_, reject) => {
+            timer = setTimeout(() => reject(new Error('请求超时')), resolvedTimeout);
+        })
+    ]).then((response) => {
+        if (timer) {
+            clearTimeout(timer);
+        }
+        return response;
+    }, (error) => {
+        if (timer) {
+            clearTimeout(timer);
+        }
+        throw error;
+    });
+};
 
 // 初始化 DOM 引用：一次性缓存常用节点
 const initSleRefs = () => {
@@ -145,7 +208,11 @@ const showNotification = (title, message, type = 'info') => {
     setTimeout(() => sleRefs.notification.classList.add('translate-x-full'), 3200);
 };
 
-const hideNotification = () => sleRefs.notification?.classList.add('translate-x-full');
+const hideNotification = () => {
+    if (sleRefs.notification) {
+        sleRefs.notification.classList.add('translate-x-full');
+    }
+};
 
 // API 配置加载：依次尝试配置文件，未命中则使用占位 baseUrl
 const loadSleApiConfig = async () => {
@@ -158,11 +225,11 @@ const loadSleApiConfig = async () => {
             const ip = data.serverip || data.ip || 'localhost';
             const port = data.port || data.serverport || '8080';
             const baseUrl = data.baseUrl || `http://${ip}:${port}`;
-            SLE_API_CONFIG = {
-                ...SLE_API_CONFIG,
-                baseUrl,
+            // Edge42 兼容：避免对象展开语法，改为 Object.assign。
+            SLE_API_CONFIG = Object.assign({}, SLE_API_CONFIG, {
+                baseUrl: baseUrl,
                 token: data.token || ''
-            };
+            });
             return;
         } catch (err) {
             // 继续尝试下一个
@@ -189,7 +256,7 @@ const mapSleTypeClass = (type) => {
     return 'bg-dark-lightest text-gray-300';
 };
 
-const escapeHtml = (value) => String(value ?? '')
+const escapeHtml = (value) => String(value != null ? value : '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
@@ -207,10 +274,18 @@ const renderBasicInfo = (payload = {}) => {
 
     if (sleRefs.scanCard) {
         const isGNode = Number(payload.sle_type) === 5;
-        sleRefs.scanCard.classList.toggle('hidden', !isGNode);
+        if (isGNode) {
+            sleRefs.scanCard.classList.remove('hidden');
+        } else {
+            sleRefs.scanCard.classList.add('hidden');
+        }
         if (sleRefs.configCard) {
-            // 扫描卡片可见时，配置卡片占整行；隐藏时占右侧空位
-            sleRefs.configCard.classList.toggle('lg:col-span-2', isGNode);
+            // 扫描卡片可见时，配置卡片占整行,隐藏时占右侧空位
+            if (isGNode) {
+                sleRefs.configCard.classList.add('lg:col-span-2');
+            } else {
+                sleRefs.configCard.classList.remove('lg:col-span-2');
+            }
         }
     }
 
@@ -221,7 +296,7 @@ const renderBasicInfo = (payload = {}) => {
 
 // 同步基础信息到配置表单
 const fillConfigForm = (payload = {}) => {
-    if (sleRefs.configName) sleRefs.configName.value = payload.sle_name || '';
+    if (sleRefs.configName) sleRefs.configName.value = payload.sle_name || '--';
     if (sleRefs.configType && payload.sle_type !== undefined && payload.sle_type !== null) {
         sleRefs.configType.value = String(payload.sle_type);
     }
@@ -237,7 +312,7 @@ const renderConnectedDevices = (list = []) => {
     }
     // 将列表转为表格行，支持不同字段命名
     sleRefs.connectedTable.innerHTML = list.map((item) => {
-        const connId = item.conn_id ?? '--';
+        const connId = item.conn_id != null ? item.conn_id : '--';
         const addr = item.mac || item.address || item.ip || '--';
         return `<tr class="border-b border-dark">
             <td class="py-3 px-4 text-gray-300">${connId}</td>
@@ -261,16 +336,25 @@ const updateTcpTargetModeUI = () => {
     const isManual = sleTcpManualSelect && hasChannels;
 
     if (sleRefs.tcpTargetPanel) {
-        sleRefs.tcpTargetPanel.classList.toggle('hidden', !isManual);
+        if (isManual) {
+            sleRefs.tcpTargetPanel.classList.remove('hidden');
+        } else {
+            sleRefs.tcpTargetPanel.classList.add('hidden');
+        }
     }
     if (sleRefs.tcpTargetMode) {
         sleRefs.tcpTargetMode.textContent = isManual ? '已开启手动选择：仅发送到勾选通道' : '默认发送到所有通道';
     }
     if (sleRefs.tcpToggleSelect) {
         sleRefs.tcpToggleSelect.textContent = isManual ? '取消选择' : '选择通道';
-        sleRefs.tcpToggleSelect.toggleAttribute('disabled', !hasChannels);
-        sleRefs.tcpToggleSelect.classList.toggle('opacity-60', !hasChannels);
-        sleRefs.tcpToggleSelect.classList.toggle('cursor-not-allowed', !hasChannels);
+        setElementDisabled(sleRefs.tcpToggleSelect, !hasChannels);
+        if (!hasChannels) {
+            sleRefs.tcpToggleSelect.classList.add('opacity-60');
+            sleRefs.tcpToggleSelect.classList.add('cursor-not-allowed');
+        } else {
+            sleRefs.tcpToggleSelect.classList.remove('opacity-60');
+            sleRefs.tcpToggleSelect.classList.remove('cursor-not-allowed');
+        }
     }
 };
 
@@ -343,14 +427,14 @@ const getSelectedTcpChannels = () => {
 const setTcpSendLoading = (loading) => {
     // 统一控制发送按钮禁用态与 loading 图标
     if (loading) {
-        sleRefs.tcpSendButton?.setAttribute('disabled', 'true');
-        sleRefs.tcpSendButton?.classList.add('opacity-70', 'cursor-not-allowed');
-        sleRefs.tcpSendLoading?.classList.remove('hidden');
+        if (sleRefs.tcpSendButton) sleRefs.tcpSendButton.setAttribute('disabled', 'true');
+        if (sleRefs.tcpSendButton) sleRefs.tcpSendButton.classList.add('opacity-70', 'cursor-not-allowed');
+        if (sleRefs.tcpSendLoading) sleRefs.tcpSendLoading.classList.remove('hidden');
         return;
     }
-    sleRefs.tcpSendButton?.removeAttribute('disabled');
-    sleRefs.tcpSendButton?.classList.remove('opacity-70', 'cursor-not-allowed');
-    sleRefs.tcpSendLoading?.classList.add('hidden');
+    if (sleRefs.tcpSendButton) sleRefs.tcpSendButton.removeAttribute('disabled');
+    if (sleRefs.tcpSendButton) sleRefs.tcpSendButton.classList.remove('opacity-70', 'cursor-not-allowed');
+    if (sleRefs.tcpSendLoading) sleRefs.tcpSendLoading.classList.add('hidden');
 };
 
 const handleTcpSend = async () => {
@@ -360,27 +444,28 @@ const handleTcpSend = async () => {
         return;
     }
 
-    const channels = sleTcpManualSelect ? getSelectedTcpChannels() : [...sleTcpAvailableChannels];
+    // Edge42 兼容：避免数组展开语法，使用 slice 复制数组。
+    const channels = sleTcpManualSelect ? getSelectedTcpChannels() : sleTcpAvailableChannels.slice();
 
     if (sleTcpManualSelect && channels.length === 0) {
         showNotification('校验失败', '请至少选择一个通道号', 'warning');
         return;
     }
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), SLE_API_CONFIG.timeout);
     setTcpSendLoading(true);
 
     try {
-        const res = await fetch(buildSleUrl('sle_announce_id'), {
+        var tcpHeaders = {
+            'Content-Type': 'application/json'
+        };
+        if (SLE_API_CONFIG.token) {
+            tcpHeaders.Authorization = 'Bearer ' + SLE_API_CONFIG.token;
+        }
+        const res = await fetchWithTimeoutCompat(buildSleUrl('sle_announce_id'), {
             method: 'POST',
-            signal: controller.signal,
-            headers: {
-                'Content-Type': 'application/json',
-                ...(SLE_API_CONFIG.token ? { Authorization: `Bearer ${SLE_API_CONFIG.token}` } : {})
-            },
+            headers: tcpHeaders,
             body: JSON.stringify({ announce_id: channels })
-        });
+        }, SLE_API_CONFIG.timeout);
         if (!res.ok) throw new Error(`发送失败：${res.status}`);
 
         const data = await res.json();
@@ -393,7 +478,6 @@ const handleTcpSend = async () => {
     } catch (err) {
         showNotification('发送失败', err.message || '无法下发 TCP 消息', 'error');
     } finally {
-        clearTimeout(timeoutId);
         setTcpSendLoading(false);
     }
 };
@@ -407,9 +491,9 @@ const renderScanResults = (list = []) => {
     }
     // 构造扫描结果行并为每行预置连接按钮数据属性
     sleRefs.scanTable.innerHTML = list.map((item, idx) => {
-        const rssi = item.rssi ?? item.signal ?? '--'; // 信号强度
+        const rssi = item.rssi != null ? item.rssi : (item.signal != null ? item.signal : '--'); // 信号强度
         const mac = item.mac || item.address || item.ip || '--';
-        const index = item.index ?? idx;
+        const index = item.index != null ? item.index : idx;
         return `<tr class="border-b border-dark">
             <td class="py-3 px-4 text-gray-300">${rssi}</td>
             <td class="py-3 px-4 text-gray-300">${mac}</td>
@@ -425,19 +509,16 @@ const renderScanResults = (list = []) => {
 
 // 请求：基础信息
 const fetchBasicInfo = async () => {
-    sleRefs.basicLoading?.classList.remove('hidden');
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), SLE_API_CONFIG.timeout);
+    if (sleRefs.basicLoading) sleRefs.basicLoading.classList.remove('hidden');
     try {
-        const res = await fetch(buildSleUrl('basicInfo'), {
+        const res = await fetchWithTimeoutCompat(buildSleUrl('basicInfo'), {
             method: 'GET',
-            signal: controller.signal,
             headers: SLE_API_CONFIG.token ? { Authorization: `Bearer ${SLE_API_CONFIG.token}` } : {}
-        });
+        }, SLE_API_CONFIG.timeout);
         if (!res.ok) throw new Error(`获取基本信息失败：${res.status}`);
         const data = await res.json();
         const payload = data.data || data;
-        // 校验返回的数据结构：sle_type, name, mac
+        // 校验返回的数据结构：sle_name, sle_type, mac
         if ((data.status && data.status !== 'success') || (!payload.sle_name && !payload.mac)) {
             throw new Error('API 返回错误响应');
         }
@@ -460,32 +541,28 @@ const fetchBasicInfo = async () => {
             fillConfigForm(sleBasicMock);
         }
     } finally {
-        clearTimeout(timeoutId);
-        sleRefs.basicLoading?.classList.add('hidden');
+        if (sleRefs.basicLoading) sleRefs.basicLoading.classList.add('hidden');
     }
 };
 
-// 请求：已连接设备列表（使用真实 API 接口）
+// 请求：已连接设备列表
 const fetchConnectedDevices = async () => {
-    sleRefs.connectedLoading?.classList.remove('hidden');
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), SLE_API_CONFIG.timeout);
+    if (sleRefs.connectedLoading) sleRefs.connectedLoading.classList.remove('hidden');
     try {
-        const res = await fetch(buildSleUrl('connected'), {
-            signal: controller.signal,
+        const res = await fetchWithTimeoutCompat(buildSleUrl('connected'), {
             headers: SLE_API_CONFIG.token ? { Authorization: `Bearer ${SLE_API_CONFIG.token}` } : {}
-        });
+        }, SLE_API_CONFIG.timeout);
         if (!res.ok) throw new Error(`获取已连接设备失败：${res.status}`);
         const data = await res.json();
         const list = data.data || data.nodes || data.list || [];
         // 校验返回结构，确保是数组
         if (!Array.isArray(list) || (data.status && data.status !== 'success')) {
-            throw new Error('API 返回空结果或错误响应');
+            throw new Error('API返回空结果或错误响应');
         }
         renderConnectedDevices(list);
         // 更新本地缓存
         sleLocalConnections.length = 0;
-        sleLocalConnections.push(...list);
+        Array.prototype.push.apply(sleLocalConnections, list);
         saveCachedConnections();
         // 连接列表更新后同步刷新 TCP 目标通道
         renderTcpTargetOptions(list);
@@ -499,22 +576,18 @@ const fetchConnectedDevices = async () => {
             showNotification('获取失败', '无法获取已连接设备，请检查接口或网络', 'warning');
         }
     } finally {
-        clearTimeout(timeoutId);
-        sleRefs.connectedLoading?.classList.add('hidden');
+        if (sleRefs.connectedLoading) sleRefs.connectedLoading.classList.add('hidden');
     }
 };
 
 // 请求：扫描结果，加载时禁用按钮并显示骨架
 const fetchScanResults = async () => {
-    sleRefs.scanButton?.setAttribute('disabled', 'true');
-    sleRefs.scanLoading?.classList.remove('hidden');
-    const controller = new AbortController(); // 控制请求取消
-    const timeoutId = setTimeout(() => controller.abort(), SLE_API_CONFIG.timeout); // 请求超时定时器
+    if (sleRefs.scanButton) sleRefs.scanButton.setAttribute('disabled', 'true');
+    if (sleRefs.scanLoading) sleRefs.scanLoading.classList.remove('hidden');
     try {
-        const res = await fetch(buildSleUrl('scan'), {
-            signal: controller.signal,
+        const res = await fetchWithTimeoutCompat(buildSleUrl('scan'), {
             headers: SLE_API_CONFIG.token ? { Authorization: `Bearer ${SLE_API_CONFIG.token}` } : {}
-        });
+        }, SLE_API_CONFIG.timeout);
         if (!res.ok) throw new Error(`扫描失败：${res.status}`);
         const data = await res.json(); // 响应主体
         const list = data.data || data.nodes || data.list || []; // 通用列表字段兼容
@@ -528,9 +601,8 @@ const fetchScanResults = async () => {
         renderScanResults([]);
         showNotification('扫描失败', '无法获取扫描结果，请检查接口或网络', 'error');
     } finally {
-        clearTimeout(timeoutId);
-        sleRefs.scanLoading?.classList.add('hidden');
-        sleRefs.scanButton?.removeAttribute('disabled');
+        if (sleRefs.scanLoading) sleRefs.scanLoading.classList.add('hidden');
+        if (sleRefs.scanButton) sleRefs.scanButton.removeAttribute('disabled');
     }
 };
 
@@ -544,13 +616,16 @@ const handleConnect = async (index, mac, name, buttonEl) => {
         btn.innerHTML = '<span class="inline-flex items-center"><span class="loader w-4 h-4 border-2 border-white rounded-full mr-2"></span>连接中</span>';
     }
     try {
+        var connectHeaders = {
+            'Content-Type': 'application/json'
+        };
+        if (SLE_API_CONFIG.token) {
+            connectHeaders.Authorization = 'Bearer ' + SLE_API_CONFIG.token;
+        }
         // 发送连接指令
         const res = await fetch(buildSleUrl('connect'), {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                ...(SLE_API_CONFIG.token ? { Authorization: `Bearer ${SLE_API_CONFIG.token}` } : {})
-            },
+            headers: connectHeaders,
             body: JSON.stringify({ mac })
         });
         if (!res.ok) throw new Error(`连接失败：${res.status}`);
@@ -561,11 +636,14 @@ const handleConnect = async (index, mac, name, buttonEl) => {
         // 将当前连接加入本地已连接列表（无查询接口）
         const connId = Number.parseInt(index, 10);
         const rssiValue = name || '--';
-        sleLocalConnections.push({
-            mac,
-            rssi: rssiValue,
-            ...(Number.isInteger(connId) ? { conn_id: connId } : {})
-        });
+        var newConn = {
+            mac: mac,
+            rssi: rssiValue
+        };
+        if (Number.isInteger(connId)) {
+            newConn.conn_id = connId;
+        }
+        sleLocalConnections.push(newConn);
         saveCachedConnections();
         renderConnectedDevices(sleLocalConnections);
         // 连接成功后立即更新 TCP 目标通道
@@ -598,12 +676,12 @@ const bindConnectButtons = () => {
 
 // 事件绑定：主题切换、通知关闭、扫描按钮
 const bindSleEvents = () => {
-    sleRefs.themeToggle?.addEventListener('click', handleThemeToggle);
-    sleRefs.notificationClose?.addEventListener('click', hideNotification);
-    sleRefs.scanButton?.addEventListener('click', fetchScanResults);
-    sleRefs.configSubmit?.addEventListener('click', handleConfigSubmit);
-    sleRefs.tcpSendButton?.addEventListener('click', handleTcpSend);
-    sleRefs.tcpToggleSelect?.addEventListener('click', handleTcpToggleSelect);
+    addEventListenerIf(sleRefs.themeToggle, 'click', handleThemeToggle);
+    addEventListenerIf(sleRefs.notificationClose, 'click', hideNotification);
+    addEventListenerIf(sleRefs.scanButton, 'click', fetchScanResults);
+    addEventListenerIf(sleRefs.configSubmit, 'click', handleConfigSubmit);
+    addEventListenerIf(sleRefs.tcpSendButton, 'click', handleTcpSend);
+    addEventListenerIf(sleRefs.tcpToggleSelect, 'click', handleTcpToggleSelect);
 };
 
 // 动作：设置 SLE 设备基本信息
@@ -612,15 +690,15 @@ const handleConfigSubmit = async () => {
         showNotification('设备重启', '设备正在重启中，请稍后刷新页面', 'warning');
         return;
     }
-    const name = sleRefs.configName?.value?.trim();
-    const typeValue = sleRefs.configType?.value;
+    const name = sleRefs.configName && sleRefs.configName.value ? sleRefs.configName.value.trim() : '';
+    const typeValue = sleRefs.configType ? sleRefs.configType.value : undefined;
     const sleType = typeValue !== undefined && typeValue !== null ? Number(typeValue) : NaN;
 
     if (!name) {
         showNotification('校验失败', '请输入设备名称', 'warning');
         return;
     }
-    if (![5, 6].includes(sleType)) {
+    if (sleType !== 5 && sleType !== 6) {
         showNotification('校验失败', '请选择有效的设备类型', 'warning');
         return;
     }
@@ -633,18 +711,18 @@ const handleConfigSubmit = async () => {
         btn.innerHTML = '<span class="inline-flex items-center"><span class="loader w-4 h-4 border-2 border-white rounded-full mr-2"></span>保存中</span>';
     }
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), SLE_API_CONFIG.timeout);
     try {
-        const res = await fetch(buildSleUrl('setbasicinfo'), {
+        var saveHeaders = {
+            'Content-Type': 'application/json'
+        };
+        if (SLE_API_CONFIG.token) {
+            saveHeaders.Authorization = 'Bearer ' + SLE_API_CONFIG.token;
+        }
+        const res = await fetchWithTimeoutCompat(buildSleUrl('setbasicinfo'), {
             method: 'POST',
-            signal: controller.signal,
-            headers: {
-                'Content-Type': 'application/json',
-                ...(SLE_API_CONFIG.token ? { Authorization: `Bearer ${SLE_API_CONFIG.token}` } : {})
-            },
+            headers: saveHeaders,
             body: JSON.stringify({ sle_type: sleType, sle_name: name })
-        });
+        }, SLE_API_CONFIG.timeout);
         if (!res.ok) throw new Error(`保存失败：${res.status}`);
         const data = await res.json();
         if (data.status !== 'success') {
@@ -655,11 +733,11 @@ const handleConfigSubmit = async () => {
             slePendingReboot = true;
             sleCurrentType = sleType;
             showNotification('设备将重启', '设备类型已更改，请稍后刷新页面', 'warning');
-            sleRefs.themeToggle?.setAttribute('disabled', 'true');
-            sleRefs.scanButton?.setAttribute('disabled', 'true');
-            sleRefs.configSubmit?.setAttribute('disabled', 'true');
-            sleRefs.configName?.setAttribute('disabled', 'true');
-            sleRefs.configType?.setAttribute('disabled', 'true');
+            if (sleRefs.themeToggle) sleRefs.themeToggle.setAttribute('disabled', 'true');
+            if (sleRefs.scanButton) sleRefs.scanButton.setAttribute('disabled', 'true');
+            if (sleRefs.configSubmit) sleRefs.configSubmit.setAttribute('disabled', 'true');
+            if (sleRefs.configName) sleRefs.configName.setAttribute('disabled', 'true');
+            if (sleRefs.configType) sleRefs.configType.setAttribute('disabled', 'true');
             return;
         }
         showNotification('保存成功', '设备基本信息已更新', 'success');
@@ -667,7 +745,6 @@ const handleConfigSubmit = async () => {
     } catch (err) {
         showNotification('保存失败', err.message || '无法保存设备基本信息', 'error');
     } finally {
-        clearTimeout(timeoutId);
         if (btn) {
             btn.innerHTML = originalHtml || '<i class="fa fa-save mr-2"></i><span>保存配置</span>';
             btn.removeAttribute('disabled');

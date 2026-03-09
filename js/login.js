@@ -335,6 +335,14 @@ class AuthManager {
      */
     onLoginSuccess(btnTextEl) {
         if (btnTextEl) btnTextEl.innerText = '登录成功';
+
+        // 生成随机会话令牌，写入 sessionStorage。
+        // sessionStorage 与标签页绑定，关闭标签页后自动清除。
+        // slb.html / sle.html 在加载时校验此令牌，
+        // 未登录直接访问时因令牌不存在而被重定向回登录页。
+        var token = Math.random().toString(36).slice(2) + Date.now().toString(36);
+        sessionStorage.setItem('_auth', token);
+
         window.location.href = 'slb.html';
     }
 

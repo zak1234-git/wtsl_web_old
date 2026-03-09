@@ -42,8 +42,8 @@ const SCENARIO_TESTS = {
     },
     lowlatency: {
         name: '低时延测试',
-        description: '验证低时延场景下的传输稳定性与时延性能，适用于实时业务评估。',
-        apiKey: 'lowLatencyTestUrl'
+        description: '验证低时延场景下的传输稳定性和时延性能，适用于实时业务评估。',
+        apiKey: 'lowlatencyTestUrl'
     }
 };
 
@@ -59,13 +59,64 @@ function setAdvApiConfig(ip, port, token = '', timeout = 10000) {
         shortRangeTestUrl: `http://${ip}:${port}/api/v1/nodes/0/shortrange_test`,
         remoteRangeTestUrl: `http://${ip}:${port}/api/v1/nodes/0/remoterange_test`,
         lowPowerTestUrl: `http://${ip}:${port}/api/v1/nodes/0/lowpow_test`,
-        lowLatencyTestUrl: `http://${ip}:${port}/api/v1/nodes/0/lowlatency_test`,
+        lowlatencyTestUrl: `http://${ip}:${port}/api/v1/nodes/0/lowlatency_test`,
         token: token || '',
         timeout: timeout || 10000
     };
 }
 
 const THEME_STORAGE_KEY = 'theme';
+
+/**
+ * 安全绑定事件：避免旧环境或空节点导致 addEventListener 调用报错。
+ */
+function addEventListenerIf(element, eventName, handler) {
+    if (element) {
+        element.addEventListener(eventName, handler);
+    }
+}
+
+/**
+ * 兼容超时请求封装：
+ * - 有 AbortController 时，使用 signal + timeout 主动中断。
+ * - 无 AbortController 时，使用 Promise.race 做超时兜底。
+ */
+function fetchWithTimeoutCompat(url, options, timeoutMs) {
+    const finalOptions = options || {};
+    const resolvedTimeout = timeoutMs || API_CONFIG.timeout || 10000;
+    const hasAbortController = typeof AbortController !== 'undefined';
+
+    if (hasAbortController) {
+        const controller = new AbortController();
+        finalOptions.signal = controller.signal;
+        const timer = setTimeout(() => controller.abort(), resolvedTimeout);
+        return fetch(url, finalOptions).then((response) => {
+            clearTimeout(timer);
+            return response;
+        }, (error) => {
+            clearTimeout(timer);
+            throw error;
+        });
+    }
+
+    let timer = null;
+    return Promise.race([
+        fetch(url, finalOptions),
+        new Promise((_, reject) => {
+            timer = setTimeout(() => reject(new Error('请求超时')), resolvedTimeout);
+        })
+    ]).then((response) => {
+        if (timer) {
+            clearTimeout(timer);
+        }
+        return response;
+    }, (error) => {
+        if (timer) {
+            clearTimeout(timer);
+        }
+        throw error;
+    });
+}
 
 // 读取首选主题（localStorage优先，其次媒体查询）
 function getInitialTheme() {
@@ -109,8 +160,8 @@ function initThemeControls() {
         localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
     };
 
-    desktopToggle?.addEventListener('click', handleToggle);
-    mobileToggle?.addEventListener('click', handleToggle);
+    addEventListenerIf(desktopToggle, 'click', handleToggle);
+    addEventListenerIf(mobileToggle, 'click', handleToggle);
 
     // 当用户未主动选择时，监听系统主题变更
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
@@ -464,7 +515,7 @@ async function initApiConfig() {
       upgradeFirmwareUrl: 'http://localhost:8080/api/v1/nodes/0/firmware/upgrade',
       getUpgradeHistoryUrl: 'http://localhost:8080/api/v1/getUpgradeHistory',
       uploadFirmwareUrl: 'http://localhost:8080/api/v1/nodes/0/firmware/upload', // 上传API端点
-      autojoinNetworkUrl: `http://localhost:8080/api/v1/nodes/0/autojoinNetwork`,
+      autojoinNetworkUrl: 'http://localhost:8080/api/v1/nodes/0/autojoinNetwork',
       timeSyncUrl: 'http://localhost:8080/api/v1/nodes/0/timesync',
       timeout: 10000
     };
@@ -571,31 +622,29 @@ function formatLocalTimeForSync(date = new Date()) {
     return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
 }
 
-// 时间同步：使用本地时间向后端同步
+// 时间同步：使用本地时间同步
 async function syncTimeWithServer() {
-    if (!API_CONFIG?.timeSyncUrl) return;
+    if (!API_CONFIG || !API_CONFIG.timeSyncUrl) return;
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), API_CONFIG.timeout);
     try {
-        const res = await fetch(API_CONFIG.timeSyncUrl, {
+        var syncHeaders = {
+            'Content-Type': 'application/json'
+        };
+        if (API_CONFIG.token) {
+            syncHeaders.Authorization = 'Bearer ' + API_CONFIG.token;
+        }
+        const res = await fetchWithTimeoutCompat(API_CONFIG.timeSyncUrl, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                ...(API_CONFIG.token ? { Authorization: `Bearer ${API_CONFIG.token}` } : {})
-            },
-            body: JSON.stringify({ time: formatLocalTimeForSync() }),
-            signal: controller.signal
-        });
+            headers: syncHeaders,
+            body: JSON.stringify({ time: formatLocalTimeForSync() })
+        }, API_CONFIG.timeout);
         if (!res.ok) throw new Error(`时间同步失败: ${res.status}`);
         const result = await res.json();
-        if (result?.status && result.status !== 'success') {
+        if (result && result.status && result.status !== 'success') {
             throw new Error(result.message || '时间同步失败');
         }
     } catch (err) {
         console.warn('[TimeSync] 时间同步失败:', err.message || err);
-    } finally {
-        clearTimeout(timeoutId);
     }
 }
 
@@ -604,7 +653,7 @@ async function syncTimeWithServer() {
  */
 function syncFooterWithCurrentPage() {
     const visibleSection = Array.from(elements.pageSections || []).find(section => !section.classList.contains('hidden'));
-    const pageId = visibleSection?.id || 'device-display';
+    const pageId = visibleSection ? visibleSection.id : 'device-display';
     updateFooterMode(pageId);
 }
 
@@ -622,12 +671,14 @@ function updateFooterMode(pageId) {
 // 设置事件监听器
 function setupEventListeners() {
     // 移动端菜单切换
-    elements.mobileMenuButton?.addEventListener('click', () => {
-        elements.mobileMenu?.classList.toggle('hidden');
+    addEventListenerIf(elements.mobileMenuButton, 'click', () => {
+        if (elements.mobileMenu) {
+            elements.mobileMenu.classList.toggle('hidden');
+        }
     });
 
     // 导航链接点击
-    elements.navLinks?.forEach(link => {
+    (elements.navLinks || []).forEach(link => {
         link.addEventListener('click', (e) => {
             e.preventDefault();
             const targetId = link.getAttribute('href').substring(1);
@@ -636,34 +687,36 @@ function setupEventListeners() {
     });
 
     // 关闭通知
-    elements.closeNotification?.addEventListener('click', () => {
-        elements.notification?.classList.add('translate-x-full');
+    addEventListenerIf(elements.closeNotification, 'click', () => {
+        if (elements.notification) {
+            elements.notification.classList.add('translate-x-full');
+        }
     });
 
     // 手动扫描
-    elements.manualScan?.addEventListener('click', handleManualScan);
+    addEventListenerIf(elements.manualScan, 'click', handleManualScan);
 
     // 保存设置（基础/高级）
-    elements.settingsBasicSubmit?.addEventListener('click', handleSaveBasicSettings);
-    elements.settingsAdvancedSubmit?.addEventListener('click', handleSaveAdvancedSettings);
-    elements.deviceSettingsForm?.addEventListener('submit', (e) => e.preventDefault());
+    addEventListenerIf(elements.settingsBasicSubmit, 'click', handleSaveBasicSettings);
+    addEventListenerIf(elements.settingsAdvancedSubmit, 'click', handleSaveAdvancedSettings);
+    addEventListenerIf(elements.deviceSettingsForm, 'submit', (e) => e.preventDefault());
 
     // 重试加载
-    elements.retryLoad?.addEventListener('click', fetchDeviceInfo);
+    addEventListenerIf(elements.retryLoad, 'click', fetchDeviceInfo);
     
     // 节点扫描相关事件
-    elements.scanGnodesButton?.addEventListener('click', scanGNodes);
-    elements.backToSettingsButton?.addEventListener('click', () => {
+    addEventListenerIf(elements.scanGnodesButton, 'click', scanGNodes);
+    addEventListenerIf(elements.backToSettingsButton, 'click', () => {
         switchPage('device-settings');
     });
     
     // 升级管理相关事件
-    elements.checkUpdateButton?.addEventListener('click', checkForUpdates);
-    elements.upgradeButton?.addEventListener('click', confirmUpgrade);
-    elements.uploadButton?.addEventListener('click', uploadFirmware);
+    addEventListenerIf(elements.checkUpdateButton, 'click', checkForUpdates);
+    addEventListenerIf(elements.upgradeButton, 'click', confirmUpgrade);
+    addEventListenerIf(elements.uploadButton, 'click', uploadFirmware);
     
     // 监听文件选择
-    elements.firmwareFileInput?.addEventListener('change', function(e) {
+    addEventListenerIf(elements.firmwareFileInput, 'change', function(e) {
         if (elements.selectedFileName && e.target.files.length > 0) {
             elements.selectedFileName.textContent = e.target.files[0].name;
             elements.selectedFileName.classList.remove('text-gray-500');
@@ -672,7 +725,7 @@ function setupEventListeners() {
     });
     
     // 新增设备类型变更监听器，确保设置表单与设备信息同步
-    elements.deviceTypeSelect?.addEventListener('change', function() {
+    addEventListenerIf(elements.deviceTypeSelect, 'change', function() {
         // 当设置中的设备类型变更时，临时更新currentDevice并刷新显示
         const newType = this.value;
         console.log('保存的设备类型:', this.value);
@@ -682,23 +735,23 @@ function setupEventListeners() {
     });
 
     // 信道变更监听 - 根据信道更新带宽选项
-    elements.channelSelect?.addEventListener('change', () => {
+    addEventListenerIf(elements.channelSelect, 'change', () => {
         updateBandwidthOptionsByChannel();
     });
 
     // 物理带宽变更监听 - 根据带宽更新信道选项
-    elements.physicalBandwidthSelect?.addEventListener('change', () => {
+    addEventListenerIf(elements.physicalBandwidthSelect, 'change', () => {
         updateChannelOptionsByBandwidth();
         updateServiceBandwidthOptions();
         validateBandwidthSettings();
     });
 
     // 业务带宽变更监听
-    elements.serviceBandwidthSelect?.addEventListener('change', validateBandwidthSettings);
+    addEventListenerIf(elements.serviceBandwidthSelect, 'change', validateBandwidthSettings);
 
     // 高级参数联动
-    elements.cpTypeSelect?.addEventListener('change', () => updateSymbolTypeOptions());
-    elements.sCfgIdxSelect?.addEventListener('change', () => updateSymbolTypeOptions());
+    addEventListenerIf(elements.cpTypeSelect, 'change', () => updateSymbolTypeOptions());
+    addEventListenerIf(elements.sCfgIdxSelect, 'change', () => updateSymbolTypeOptions());
 
     // 场景配置：卡片选择与开始测试
     initScenarioSelection();
@@ -725,7 +778,7 @@ function initScenarioSelection() {
         });
     });
 
-    elements.scenarioStartBtn?.addEventListener('click', () => {
+    addEventListenerIf(elements.scenarioStartBtn, 'click', () => {
         if (!selectedScenarioId) return;
         const config = SCENARIO_TESTS[selectedScenarioId];
         if (!config) return;
@@ -745,7 +798,7 @@ function initScenarioSelection() {
 function setScenarioSelection(scenarioId) {
     selectedScenarioId = scenarioId && SCENARIO_TESTS[scenarioId] ? scenarioId : null;
 
-    elements.scenarioCards?.forEach(card => {
+    (elements.scenarioCards || []).forEach(card => {
         const isActive = selectedScenarioId && card.dataset.scenario === selectedScenarioId;
         card.classList.toggle('scenario-card--selected', isActive);
         card.setAttribute('aria-pressed', isActive ? 'true' : 'false');
@@ -969,7 +1022,7 @@ function updateBandwidthOptionsByChannel() {
     let finalSelected = currentSelected;
     if (!availableBandwidths.includes(currentSelected)) {
         // 如果不在， 选择可用带宽中的最大值
-        finalSelected = Math.max(...availableBandwidths);
+        finalSelected = Math.max.apply(null, availableBandwidths);
         showHint = true; // 显示提示， 因为带宽被自动调整了
     }
 
@@ -1042,7 +1095,7 @@ function updateServiceBandwidthOptions() {
     if (!availableOptions.includes(currentSelected)) {
         if (availableOptions.length > 0) {
             // 选择最大的可用值
-            const maxAvailable = Math.max(...availableOptions);
+            const maxAvailable = Math.max.apply(null, availableOptions);
             serviceBandwidthSelect.value = maxAvailable;
         }
     }
@@ -1077,20 +1130,14 @@ async function handleAutoJoinChange(event) {
         console.log('请求数据：', postData);
 
         // 创建超时控制器
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), API_CONFIG.timeout);
-
         // 发送API请求到专用端点
-        const response = await fetch(API_CONFIG.autoJoinNetworkUrl, {
+        const response = await fetchWithTimeoutCompat(API_CONFIG.autoJoinNetworkUrl, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify(postData),
-            signal: controller.signal
-        });
-
-        clearTimeout(timeoutId);
+            body: JSON.stringify(postData)
+        }, API_CONFIG.timeout);
 
         if (!response.ok) {
             throw new Error(`HTTP错误: ${response.status} ${response.statusText}`);
@@ -1197,11 +1244,8 @@ async function performUpgrade() {
         showNotification('升级中', `正在升级...`, false, 0);
         
         // 创建超时控制器
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), API_CONFIG.timeout * 3); // 升级超时时间延长
-        
         // 发送真实POST请求到升级API
-        const response = await fetch(API_CONFIG.upgradeFirmwareUrl, {
+        const response = await fetchWithTimeoutCompat(API_CONFIG.upgradeFirmwareUrl, {
             method: 'POST',
             headers: { 
                 'Content-Type': 'application/json',
@@ -1210,11 +1254,8 @@ async function performUpgrade() {
             },
             body: JSON.stringify({
                 deviceId: currentDevice.mac || 'unknown'
-            }),
-            signal: controller.signal
-        });
-        
-        clearTimeout(timeoutId);
+            })
+        }, API_CONFIG.timeout * 3);
         
         // 检查HTTP响应状态
         if (!response.ok) {
@@ -1342,7 +1383,7 @@ async function uploadFirmware() {
         }
         
         // 从响应中获取新版本信息
-        const newVersion = result.data?.version || 
+        const newVersion = (result.data && result.data.version) || 
                           extractVersionFromFileName(firmwareFile.name) || 
                           '自定义版本';
         
@@ -1400,16 +1441,7 @@ function extractVersionFromFileName(fileName) {
 // 带重试的fetch函数
 async function fetchWithRetry(url, options, retries = 2, delay = 1000) {
     try {
-        // 创建超时控制器
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), options.timeout || API_CONFIG.timeout);
-        
-        const response = await fetch(url, {
-            ...options,
-            signal: controller.signal
-        });
-        
-        clearTimeout(timeoutId);
+        const response = await fetchWithTimeoutCompat(url, options, options.timeout || API_CONFIG.timeout);
         return response;
     } catch (error) {
         if (retries > 0 && !(error instanceof TypeError) && error.name !== 'AbortError') {
@@ -1428,7 +1460,7 @@ function initChannelSelect() {
     channelSelect.innerHTML = '';
 
     // 根据当前带宽确定可用信道
-    const currentBandwidth = parseInt(elements.physicalBandwidthSelect?.value) || 20;
+    const currentBandwidth = parseInt(elements.physicalBandwidthSelect ? elements.physicalBandwidthSelect.value : '', 10) || 20;
     let availableChannels = BANDWIDTH_CHANNEL_RULES[currentBandwidth] || BANDWIDTH_CHANNEL_RULES[20];
 
     availableChannels.forEach(channel => {
@@ -1507,36 +1539,32 @@ async function handleManualScan() {
 async function fetchDeviceInfo() {
     await syncTimeWithServer();
     // 显示加载状态
-    elements.deviceLoading?.classList.remove('hidden');
-    elements.deviceErrorHint?.classList.add('hidden');
-    elements.deviceInfoCard?.classList.add('hidden');
-    elements.connectedDevicesCard?.classList.add('hidden');
-    elements.signalTrendCard?.classList.add('hidden');
-
-    // 创建超时控制器
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), API_CONFIG.timeout);
+    if (elements.deviceLoading) elements.deviceLoading.classList.remove('hidden');
+    if (elements.deviceErrorHint) elements.deviceErrorHint.classList.add('hidden');
+    if (elements.deviceInfoCard) elements.deviceInfoCard.classList.add('hidden');
+    if (elements.connectedDevicesCard) elements.connectedDevicesCard.classList.add('hidden');
+    if (elements.signalTrendCard) elements.signalTrendCard.classList.add('hidden');
 
     try {
         // 同时请求两个API，添加超时控制
         const [basicInfoResponse, connInfoResponse] = await Promise.all([
             fetch(API_CONFIG.getDevBasicInfoUrl, { 
                 method: 'GET',
-                signal: controller.signal,
                 headers: {
                     'Content-Type': 'application/json'
                 }
+            }).then(function (response) {
+                return response;
             }),
             fetch(API_CONFIG.getDevConnInfoUrl, { 
                 method: 'GET',
-                signal: controller.signal,
                 headers: {
                     'Content-Type': 'application/json'
                 }
+            }).then(function (response) {
+                return response;
             })
         ]);
-
-        clearTimeout(timeoutId); // 清除超时
 
         // 检查响应状态
         if (!basicInfoResponse.ok) {
@@ -1556,12 +1584,10 @@ async function fetchDeviceInfo() {
         }
 
         // 合并设备信息
-        currentDevice = { 
-            ...basicInfo.data,
-            ...connInfo.deviceInfo,
-            // 从basicinfo中读取flag值，并转换为布尔值
-            auto_join: basicInfo.data.aj_flag === 1
-        };
+        // Edge42 兼容：避免对象展开语法，使用 Object.assign 合并对象。
+        currentDevice = Object.assign({}, basicInfo.data || {}, connInfo.deviceInfo || {});
+        // 从basicinfo中读取flag值，并转换为布尔值
+        currentDevice.auto_join = basicInfo.data && basicInfo.data.aj_flag === 1;
         connectedDevices = connInfo.data || [];
         
         // 为每个设备添加历史信号数据
@@ -1579,14 +1605,14 @@ async function fetchDeviceInfo() {
         await fetchAdvancedInfo(true, true);
 
         // 隐藏默认数据指示器
-        elements.deviceInfoDefaultIndicator?.classList.add('hidden');
-        elements.connectedDevicesDefaultIndicator?.classList.add('hidden');
+        if (elements.deviceInfoDefaultIndicator) elements.deviceInfoDefaultIndicator.classList.add('hidden');
+        if (elements.connectedDevicesDefaultIndicator) elements.connectedDevicesDefaultIndicator.classList.add('hidden');
 
         // 隐藏加载状态，显示内容
-        elements.deviceLoading?.classList.add('hidden');
-        elements.deviceInfoCard?.classList.remove('hidden');
-        elements.connectedDevicesCard?.classList.remove('hidden');
-        elements.signalTrendCard?.classList.remove('hidden');
+        if (elements.deviceLoading) elements.deviceLoading.classList.add('hidden');
+        if (elements.deviceInfoCard) elements.deviceInfoCard.classList.remove('hidden');
+        if (elements.connectedDevicesCard) elements.connectedDevicesCard.classList.remove('hidden');
+        if (elements.signalTrendCard) elements.signalTrendCard.classList.remove('hidden');
 
         // 更新UI显示，确保设备类型同步
         updateDeviceDisplay();
@@ -1607,11 +1633,9 @@ async function fetchDeviceInfo() {
         console.error('获取设备信息失败:', error);
         
         // 清除超时
-        clearTimeout(timeoutId);
-        
         // 显示错误提示
-        elements.deviceLoading?.classList.add('hidden');
-        elements.deviceErrorHint?.classList.remove('hidden');
+        if (elements.deviceLoading) elements.deviceLoading.classList.add('hidden');
+        if (elements.deviceErrorHint) elements.deviceErrorHint.classList.remove('hidden');
         
         // 根据错误类型显示不同信息
         let errorMessage = '无法获取设备信息，已使用默认数据';
@@ -1624,9 +1648,9 @@ async function fetchDeviceInfo() {
         elements.errorHintMessage.textContent = errorMessage;
         
         // 显示内容
-        elements.deviceInfoCard?.classList.remove('hidden');
-        elements.connectedDevicesCard?.classList.remove('hidden');
-        elements.signalTrendCard?.classList.remove('hidden');
+        if (elements.deviceInfoCard) elements.deviceInfoCard.classList.remove('hidden');
+        if (elements.connectedDevicesCard) elements.connectedDevicesCard.classList.remove('hidden');
+        if (elements.signalTrendCard) elements.signalTrendCard.classList.remove('hidden');
         
         // 显示错误通知
         showNotification('加载失败', errorMessage, true);
@@ -1634,7 +1658,7 @@ async function fetchDeviceInfo() {
     }
 }
 
-// 获取高级信息（cp_type / symbol_type / sysmsg_period / s_cfg_idx / range_opt / acs_enable 等）
+// 获取高级信息（cp_type / symbol_type / sysmsg_period / s_cfg_idx / range_opt / acs_enable等）
 async function fetchAdvancedInfo(silent = false, skipUiUpdate = false) {
     // 检查高级接口配置是否已初始化
     if (!ADV_API_CONFIG.getAdvInfoUrl) {
@@ -1644,8 +1668,6 @@ async function fetchAdvancedInfo(silent = false, skipUiUpdate = false) {
 
     // 设置请求超时时间
     const timeoutMs = ADV_API_CONFIG.timeout || API_CONFIG.timeout || 10000;
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
     // 设置请求头，包含必要的认证信息
     const headers = { 'Content-Type': 'application/json' };
@@ -1655,14 +1677,10 @@ async function fetchAdvancedInfo(silent = false, skipUiUpdate = false) {
 
     try {
         // 发送GET请求以获取高级信息
-        const response = await fetch(ADV_API_CONFIG.getAdvInfoUrl, {
+        const response = await fetchWithTimeoutCompat(ADV_API_CONFIG.getAdvInfoUrl, {
             method: 'GET',
-            headers,
-            signal: controller.signal
-        });
-
-        // 清除超时计时器
-        clearTimeout(timeoutId);
+            headers
+        }, timeoutMs);
 
         // 检查HTTP响应状态
         if (!response.ok) {
@@ -1682,11 +1700,12 @@ async function fetchAdvancedInfo(silent = false, skipUiUpdate = false) {
         const advData = result.data;
 
         // 获取发射功率，优先使用tx_power字段，其次使用real_power字段
-        const txPower = advData.tx_power ?? advData.real_power?.real_pow ?? currentDevice.tx_power;
+        const advRealPower = advData.real_power ? advData.real_power.real_pow : undefined;
+        const txPower = advData.tx_power != null ? advData.tx_power : (advRealPower != null ? advRealPower : currentDevice.tx_power);
 
         // 更新当前设备信息
-        currentDevice = {
-            ...currentDevice,
+        // Edge42 兼容：避免对象展开语法，使用 Object.assign 更新对象。
+        currentDevice = Object.assign({}, currentDevice || {}, {
             cell_id: advData.cell_id,
             cp_type: advData.cp_type,
             symbol_type: advData.symbol_type,
@@ -1695,8 +1714,8 @@ async function fetchAdvancedInfo(silent = false, skipUiUpdate = false) {
             range_opt: advData.range_opt,
             acs_enable: advData.acs_enable,
             tx_power: txPower,
-            pow: txPower ?? currentDevice.pow
-        };
+            pow: txPower != null ? txPower : currentDevice.pow
+        });
 
         // 如果未跳过UI更新，则更新设备显示和设置表单
         if (!skipUiUpdate) {
@@ -1710,7 +1729,6 @@ async function fetchAdvancedInfo(silent = false, skipUiUpdate = false) {
         }
     } catch (error) {
         // 清除超时计时器
-        clearTimeout(timeoutId);
         console.error('获取高级信息失败:', error);
         if (!silent) {
             showNotification('高级信息获取失败', error.message, true);
@@ -1738,7 +1756,7 @@ function updateAutoJoinCheckbox() {
 // 更新设备显示 - 增强默认值处理，确保设备类型正确显示
 function updateDeviceDisplay() {
     // 确保设备对象存在
-    if (!currentDevice) currentDevice = { ...defaultDeviceInfo };
+    if (!currentDevice) currentDevice = Object.assign({}, defaultDeviceInfo);
 
     const deviceNameEl = document.getElementById('device-name');
     const deviceTypeEl = document.getElementById('current-device-type');
@@ -1899,7 +1917,7 @@ function populateSettingsForm() {
     if (sCfgIdxEl && currentDevice.s_cfg_idx !== undefined) sCfgIdxEl.value = currentDevice.s_cfg_idx;
     if (sysmsgPeriodEl && currentDevice.sysmsg_period !== undefined) sysmsgPeriodEl.value = currentDevice.sysmsg_period;
     if (powEl) {
-        const txPower = currentDevice.tx_power ?? currentDevice.pow;
+        const txPower = currentDevice.tx_power != null ? currentDevice.tx_power : currentDevice.pow;
         if (txPower !== undefined) {
             powEl.value = txPower;
         }
@@ -1910,7 +1928,8 @@ function populateSettingsForm() {
     // 设备设置页：T节点隐藏整个高级参数区域（含保存按钮）
     const isTNode = (currentDevice.slb_role || currentDevice.sub_role || (currentDevice.type === 0 ? 'gnode' : 'tnode')) === 'tnode';
     const advancedSection = document.querySelector('#device-settings .border-t.border-dark-lightest.pt-4');
-    const advancedAction = document.getElementById('settings-advanced-submit')?.closest('div.flex.justify-end.mt-6');
+    const advancedSubmitEl = document.getElementById('settings-advanced-submit');
+    const advancedAction = advancedSubmitEl ? advancedSubmitEl.closest('div.flex.justify-end.mt-6') : null;
     if (advancedSection) advancedSection.classList.toggle('hidden', isTNode);
     if (advancedAction) advancedAction.classList.toggle('hidden', isTNode);
 
@@ -1939,7 +1958,7 @@ function populateSettingsForm() {
         // 设置信道(注意: updateChannelOptionsByBandwidth会根据带宽过滤信道)
         if (channelEl && currentDevice.channel) {
             // 检查当前信道是否在当前带宽下可用
-            const currentBandwidth = parseInt(physicalBandwidthEl?.value) || 20;
+            const currentBandwidth = parseInt(physicalBandwidthEl ? physicalBandwidthEl.value : '', 10) || 20;
             const availableChannels = BANDWIDTH_CHANNEL_RULES[currentBandwidth] || BANDWIDTH_CHANNEL_RULES[20];
             if (availableChannels.includes(parseInt(currentDevice.channel))) {
                 channelEl.value = currentDevice.channel;
@@ -2022,8 +2041,8 @@ function initConnectedDevicesTable() {
 
 // 验证带宽设置
 function validateBandwidthSettings() {
-    const physical = parseInt(elements.physicalBandwidthSelect?.value || '0');
-    const service = parseInt(elements.serviceBandwidthSelect?.value || '0');
+    const physical = parseInt(elements.physicalBandwidthSelect ? elements.physicalBandwidthSelect.value : '0', 10);
+    const service = parseInt(elements.serviceBandwidthSelect ? elements.serviceBandwidthSelect.value : '0', 10);
     const bandwidthWarning = document.getElementById('bandwidth-warning');
     
     if (!bandwidthWarning) {
@@ -2057,7 +2076,8 @@ function updateSymbolTypeOptions(preferredValue) {
 
     const cpType = parseInt(cpTypeEl.value) || 0;
     const sCfgIdx = parseInt(sCfgIdxEl.value) || 0;
-    const allowed = SYMBOL_TYPE_RULES?.[cpType]?.[sCfgIdx] || [];
+    const cpRule = SYMBOL_TYPE_RULES[cpType] || {};
+    const allowed = cpRule[sCfgIdx] || [];
     const currentValue = preferredValue !== undefined ? preferredValue : parseInt(symbolTypeEl.value);
 
     symbolTypeEl.innerHTML = '';
@@ -2160,14 +2180,16 @@ function switchPage(pageId) {
     }
     
     // 切换页面显示
-    elements.pageSections?.forEach(section => section.classList.add('hidden'));
+    (elements.pageSections || []).forEach(section => section.classList.add('hidden'));
     const targetSection = document.getElementById(pageId);
     if (targetSection) {
         targetSection.classList.remove('hidden');
     }
     
     // 关闭移动菜单
-    elements.mobileMenu?.classList.add('hidden');
+    if (elements.mobileMenu) {
+        elements.mobileMenu.classList.add('hidden');
+    }
 
     // 停止之前的自动刷新
     stopAutoRefresh();
@@ -2274,8 +2296,7 @@ async function handleSaveBasicSettings() {
         }
         
         // 更新当前设备信息 - 关键：确保设备类型正确更新
-        currentDevice = {
-            ...currentDevice,
+        currentDevice = Object.assign({}, currentDevice || {}, {
             type: deviceType === 'tnode' ? 1 : 0,  // 同步设备类型到currentDevice
             essid: nameEl.value,
             ip: ipEl.value,
@@ -2284,7 +2305,7 @@ async function handleSaveBasicSettings() {
             tfc_bw: parseInt(serviceBandwidthEl.value),
             net_manage_ip: serveripEl.value,
             log_port: parseInt(serverportEl.value)
-        };
+        });
         
         // 强制更新UI显示，确保设备类型同步显示
         updateDeviceDisplay();
@@ -2373,7 +2394,7 @@ async function handleSaveAdvancedSettings() {
     const sysmsgPeriod = parseInt(sysmsgPeriodEl.value); 
     const rangeOpt = parseInt(rangeOptEl.value); 
     const acsenable = parseInt(acsenableEl.value);
-    const powValueRaw = powEl?.value ?? ''; 
+    const powValueRaw = (powEl && powEl.value != null) ? powEl.value : ''; 
     const powValue = powValueRaw === '' ? null : parseInt(powValueRaw); 
 
     // 验证表单数据是否完整
@@ -2444,8 +2465,7 @@ async function handleSaveAdvancedSettings() {
         }
 
         // 更新当前设备信息
-        currentDevice = {
-            ...currentDevice,
+        currentDevice = Object.assign({}, currentDevice || {}, {
             cell_id: cellId,
             cp_type: cpType,
             s_cfg_idx: sCfgIdx,
@@ -2455,7 +2475,7 @@ async function handleSaveAdvancedSettings() {
             acs_enable: acsenable,
             tx_power: powValue === null ? currentDevice.tx_power : powValue,
             pow: powValue === null ? currentDevice.pow : powValue
-        };
+        });
 
         // 更新设备显示和表单
         updateDeviceDisplay();
@@ -2490,20 +2510,14 @@ async function postScenarioTest(apiUrl, label, buttonEl) {
 
     console.info(`[场景测试] 发送POST请求: ${label} -> ${apiUrl}`);
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), ADV_API_CONFIG.timeout || 10000);
-
     try {
-        const response = await fetch(apiUrl, {
+        const response = await fetchWithTimeoutCompat(apiUrl, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({}),
-            signal: controller.signal
-        });
-
-        clearTimeout(timeoutId);
+            body: JSON.stringify({})
+        }, ADV_API_CONFIG.timeout || 10000);
 
         if (!response.ok) {
             throw new Error(`HTTP错误: ${response.status} ${response.statusText}`);
@@ -2549,28 +2563,21 @@ async function scanGNodes(silent = false) {
     elements.scanGnodesButton.disabled = true;
     elements.scanLoading.classList.remove('hidden');
     elements.gNodesTable.innerHTML = '';
-    elements.scanResultHint?.classList.add('hidden');
+    if (elements.scanResultHint) {
+        elements.scanResultHint.classList.add('hidden');
+    }
     
     // 创建超时控制器
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), API_CONFIG.timeout);
-    
     try {
         // 发送HTTP GET请求到API端点
-        const response = await fetch(API_CONFIG.scanGNodesUrl, {
+        const response = await fetchWithTimeoutCompat(API_CONFIG.scanGNodesUrl, {
             method: 'GET',  // 修改为GET请求
             headers: { 
                 'Content-Type': 'application/json',
                 // 可以添加认证头，如果需要的话
                 // 'Authorization': 'Bearer ' + getAuthToken()
-            },
-            // GET请求没有请求体
-            signal: controller.signal,
-            timeout: API_CONFIG.timeout
-        });
-        
-        // 清除超时
-        clearTimeout(timeoutId);
+            }
+        }, API_CONFIG.timeout);
         
         // 检查响应状态
         if (!response.ok) {
@@ -2604,9 +2611,6 @@ async function scanGNodes(silent = false) {
     } catch (error) {
         console.error('扫描G节点失败:', error);
         
-        // 清除超时
-        clearTimeout(timeoutId);
-        
         // 显示错误信息
         elements.gNodesTable.innerHTML = `
             <tr>
@@ -2637,7 +2641,7 @@ async function scanGNodes(silent = false) {
 function filterScanResults() {
     if (!elements.gNodesTable) return;
     
-    let filteredResults = [...scanResults];
+    let filteredResults = scanResults.slice();
     
     // 应用过滤条件
     if (activeScanFilter === 'strong') {
