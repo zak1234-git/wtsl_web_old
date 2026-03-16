@@ -43,6 +43,7 @@
         })();
     </script>
     <link href="css/font-awesome.min.css" rel="stylesheet">
+    <link href="css/styles.css" rel="stylesheet">
     <link href="css/edge42-fallback.css" rel="stylesheet">
 
     <script>
@@ -192,6 +193,10 @@
                         <p class="text-gray-400 text-sm mb-1">设备地址</p>
                         <p id="sle-basic-address" class="text-white font-mono"></p>
                     </div>
+                    <div class="bg-dark rounded-lg p-4">
+                        <p class="text-gray-400 text-sm mb-1">是否使能</p>
+                        <p id="sle-basic-enable" class="text-danger font-semibold">未使能</p>
+                    </div>
                 </div>
             </div>
 
@@ -257,6 +262,16 @@
                                 <option value="6">T节点</option>
                                 <!-- <option value="7">P节点</option> -->
                             </select>
+                        </div>
+                        <div class="bg-dark rounded-lg p-4 md:col-span-2">
+                            <label for="sle-config-enable" class="block text-gray-400 text-sm mb-2">SLE使能开关</label>
+                            <div class="w-full bg-dark border border-dark-lightest rounded-lg px-4 py-2 text-white flex items-center justify-between">
+                                <span class="text-sm text-gray-300">是否使能 SLE</span>
+                                <label class="auto-refresh-switch" title="开启或关闭 SLE 功能（是否使能）">
+                                    <input type="checkbox" id="sle-config-enable">
+                                    <span class="auto-refresh-slider"></span>
+                                </label>
+                            </div>
                         </div>
                         <div class="md:col-span-2 flex justify-end">
                             <button type="button" id="sle-config-submit" class="bg-primary hover:bg-primary/80 text-white px-6 py-2 rounded-lg transition-colors flex items-center">

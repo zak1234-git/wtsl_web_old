@@ -38,7 +38,7 @@ const sleDemoData = {
 */
 
 // 基本信息临时占位数据（接口未就绪时使用）
-const sleBasicMock = { sle_name: 'SLE-DEV-01', mac: 'b:b:b:b:80:1', sle_type: 5 };
+const sleBasicMock = { sle_name: 'SLE-DEV-01', mac: 'b:b:b:b:80:1', sle_type: 5, sle_enable: 0 };
 
 let sleCurrentType = null;
 let slePendingReboot = false;
@@ -146,6 +146,7 @@ const initSleRefs = () => {
     sleRefs.basicName = document.getElementById('sle-basic-name');
     sleRefs.basicType = document.getElementById('sle-basic-type');
     sleRefs.basicAddress = document.getElementById('sle-basic-address');
+    sleRefs.basicEnable = document.getElementById('sle-basic-enable');
     sleRefs.basicLoading = document.getElementById('sle-basic-loading');
 
     sleRefs.connectedTable = document.getElementById('sle-connected-table');
@@ -160,6 +161,7 @@ const initSleRefs = () => {
     sleRefs.configCard = document.getElementById('sle-config-card');
     sleRefs.configName = document.getElementById('sle-config-name');
     sleRefs.configType = document.getElementById('sle-config-type');
+    sleRefs.configEnable = document.getElementById('sle-config-enable');
     sleRefs.configSubmit = document.getElementById('sle-config-submit');
 
     sleRefs.tcpTargetList = document.getElementById('sle-tcp-target-list');    
@@ -272,6 +274,12 @@ const renderBasicInfo = (payload = {}) => {
     }
     if (sleRefs.basicAddress) sleRefs.basicAddress.textContent = payload.mac || '--';
 
+    if (sleRefs.basicEnable) {
+        const enabled = Number(payload.sle_enable) === 1;
+        sleRefs.basicEnable.textContent = enabled ? '已使能' : '未使能';
+        sleRefs.basicEnable.className = `font-semibold ${enabled ? 'text-success' : 'text-danger'}`;
+    }
+
     if (sleRefs.scanCard) {
         const isGNode = Number(payload.sle_type) === 5;
         if (isGNode) {
@@ -299,6 +307,9 @@ const fillConfigForm = (payload = {}) => {
     if (sleRefs.configName) sleRefs.configName.value = payload.sle_name || '--';
     if (sleRefs.configType && payload.sle_type !== undefined && payload.sle_type !== null) {
         sleRefs.configType.value = String(payload.sle_type);
+    }
+    if (sleRefs.configEnable) {
+        sleRefs.configEnable.checked = Number(payload.sle_enable) === 1;
     }
 };
 
@@ -693,6 +704,7 @@ const handleConfigSubmit = async () => {
     const name = sleRefs.configName && sleRefs.configName.value ? sleRefs.configName.value.trim() : '';
     const typeValue = sleRefs.configType ? sleRefs.configType.value : undefined;
     const sleType = typeValue !== undefined && typeValue !== null ? Number(typeValue) : NaN;
+    const sleEnable = sleRefs.configEnable && sleRefs.configEnable.checked ? 1 : 0;
 
     if (!name) {
         showNotification('校验失败', '请输入设备名称', 'warning');
@@ -721,7 +733,7 @@ const handleConfigSubmit = async () => {
         const res = await fetchWithTimeoutCompat(buildSleUrl('setbasicinfo'), {
             method: 'POST',
             headers: saveHeaders,
-            body: JSON.stringify({ sle_type: sleType, sle_name: name })
+            body: JSON.stringify({ sle_type: sleType, sle_name: name, sle_enable: sleEnable })
         }, SLE_API_CONFIG.timeout);
         if (!res.ok) throw new Error(`保存失败：${res.status}`);
         const data = await res.json();
@@ -738,6 +750,7 @@ const handleConfigSubmit = async () => {
             if (sleRefs.configSubmit) sleRefs.configSubmit.setAttribute('disabled', 'true');
             if (sleRefs.configName) sleRefs.configName.setAttribute('disabled', 'true');
             if (sleRefs.configType) sleRefs.configType.setAttribute('disabled', 'true');
+            if (sleRefs.configEnable) sleRefs.configEnable.setAttribute('disabled', 'true');
             return;
         }
         showNotification('保存成功', '设备基本信息已更新', 'success');

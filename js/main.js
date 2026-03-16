@@ -1699,10 +1699,6 @@ async function fetchAdvancedInfo(silent = false, skipUiUpdate = false) {
         // 提取高级信息数据
         const advData = result.data;
 
-        // 获取发射功率，优先使用tx_power字段，其次使用real_power字段
-        const advRealPower = advData.real_power ? advData.real_power.real_pow : undefined;
-        const txPower = advData.tx_power != null ? advData.tx_power : (advRealPower != null ? advRealPower : currentDevice.tx_power);
-
         // 更新当前设备信息
         // Edge42 兼容：避免对象展开语法，使用 Object.assign 更新对象。
         currentDevice = Object.assign({}, currentDevice || {}, {
@@ -1713,8 +1709,7 @@ async function fetchAdvancedInfo(silent = false, skipUiUpdate = false) {
             s_cfg_idx: advData.s_cfg_idx,
             range_opt: advData.range_opt,
             acs_enable: advData.acs_enable,
-            tx_power: txPower,
-            pow: txPower != null ? txPower : currentDevice.pow
+            tx_power: advData.real_power.exp_pow
         });
 
         // 如果未跳过UI更新，则更新设备显示和设置表单
@@ -1917,9 +1912,8 @@ function populateSettingsForm() {
     if (sCfgIdxEl && currentDevice.s_cfg_idx !== undefined) sCfgIdxEl.value = currentDevice.s_cfg_idx;
     if (sysmsgPeriodEl && currentDevice.sysmsg_period !== undefined) sysmsgPeriodEl.value = currentDevice.sysmsg_period;
     if (powEl) {
-        const txPower = currentDevice.tx_power != null ? currentDevice.tx_power : currentDevice.pow;
-        if (txPower !== undefined) {
-            powEl.value = txPower;
+        if (currentDevice.tx_power !== undefined) {
+            powEl.value = currentDevice.tx_power;
         }
     }
     if (rangeOptEl && currentDevice.range_opt !== undefined) rangeOptEl.value = currentDevice.range_opt;
@@ -2473,8 +2467,7 @@ async function handleSaveAdvancedSettings() {
             sysmsg_period: sysmsgPeriod,
             range_opt: rangeOpt,
             acs_enable: acsenable,
-            tx_power: powValue === null ? currentDevice.tx_power : powValue,
-            pow: powValue === null ? currentDevice.pow : powValue
+            tx_power: powValue === null ? currentDevice.tx_power : powValue
         });
 
         // 更新设备显示和表单
