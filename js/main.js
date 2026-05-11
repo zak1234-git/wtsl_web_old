@@ -350,7 +350,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 deviceSysmsgPeriod: document.getElementById('device-sysmsg-period'),
                 deviceSCfgIdx: document.getElementById('device-s-cfg-idx'),
                 deviceRangeOpt: document.getElementById('device-range-opt'),
-                deviceacsenable: document.getElementById('device-acs-enable')
+                deviceacsenable: document.getElementById('device-acs-enable'),
+                deviceChipTemperature: document.getElementById('device-chip-temperature')
         };
 
             initThemeControls();
@@ -1709,7 +1710,8 @@ async function fetchAdvancedInfo(silent = false, skipUiUpdate = false) {
             s_cfg_idx: advData.s_cfg_idx,
             range_opt: advData.range_opt,
             acs_enable: advData.acs_enable,
-            tx_power: advData.real_power.exp_pow
+            tx_power: advData.real_power.exp_pow,
+            chip_temperature: advData.chip_temperature
         });
 
         // 如果未跳过UI更新，则更新设备显示和设置表单
@@ -1810,6 +1812,7 @@ function updateDeviceDisplay() {
     const deviceSCfgIdxEl = elements.deviceSCfgIdx;
     const deviceRangeOptEl = elements.deviceRangeOpt;
     const deviceacsenableEl = elements.deviceacsenable;
+    const deviceChipTemperatureEl = elements.deviceChipTemperature;
 
     if (deviceCellIdEl) {
         const cellId = currentDevice.cell_id;
@@ -1838,6 +1841,10 @@ function updateDeviceDisplay() {
     if (deviceacsenableEl) {
         const acsenable = currentDevice.acs_enable;
         deviceacsenableEl.textContent = acsenable !== undefined ? (ACS_ENABLE_LABELS[acsenable] || acsenable) : '未知';
+    }
+    if (deviceChipTemperatureEl) {
+        const chipTemperature = currentDevice.chip_temperature;
+        deviceChipTemperatureEl.textContent = chipTemperature !== undefined ? chipTemperature : '未知';
     }
 
     // 自动避让开关仅对 G 节点显示

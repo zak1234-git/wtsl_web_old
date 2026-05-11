@@ -276,7 +276,7 @@ const renderBasicInfo = (payload = {}) => {
 
     if (sleRefs.basicEnable) {
         const enabled = Number(payload.sle_enable) === 1;
-        sleRefs.basicEnable.textContent = enabled ? '已使能' : '未使能';
+        sleRefs.basicEnable.textContent = enabled ? '启用' : '禁用';
         sleRefs.basicEnable.className = `font-semibold ${enabled ? 'text-success' : 'text-danger'}`;
     }
 
