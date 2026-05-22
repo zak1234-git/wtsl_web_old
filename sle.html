@@ -2,22 +2,53 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>设备管理系统</title>
     <script>
+        // ── 访问守卫（必须是 head 内第一个脚本）──────────────────────────
+        // 用 location.replace 跳回登录页，并中止后续脚本执行。
+        // ─────────────────────────────────────────────────────────────────
+        (function () {
+            if (!sessionStorage.getItem('_auth')) {
+                window.location.replace('index.html');
+            }
+        })();
+    </script>
+    <script>
         // 预先设置主题，避免首次渲染闪烁（与主站一致）
-        (() => {
-            const storageKey = 'theme';
-            const stored = localStorage.getItem(storageKey);
-            const theme = stored || 'light';
+        (function () {
+            var storageKey = 'theme';
+            var stored = localStorage.getItem(storageKey);
+            var theme = stored || 'light';
             document.documentElement.setAttribute('data-theme', theme);
         })();
     </script>
-    <script src="js/tailwindcss_3.4.17.js"></script>
+    <script>
+        (function () {
+            // 通过语法探测判断是否可安全执行 Tailwind 3 运行时脚本
+            var supportsModernSyntax = true;
+            try {
+                new Function('var x={a:1}; return x?.a ?? 0;');
+            } catch (e) {
+                supportsModernSyntax = false;
+            }
+            window.__supportsModernTailwind = supportsModernSyntax;
+            if (supportsModernSyntax) {
+                // 仅在现代语法可用时加载，避免 Edge 42 解析第三方脚本失败
+                var script = document.createElement('script');
+                script.src = 'js/tailwindcss_3.4.17.js';
+                document.head.appendChild(script);
+            }
+        })();
+    </script>
     <link href="css/font-awesome.min.css" rel="stylesheet">
+    <link href="css/styles.css" rel="stylesheet">
+    <link href="css/edge42-fallback.css" rel="stylesheet">
 
     <script>
-        tailwind.config = {
+        window.tailwind = window.tailwind || {};
+        window.tailwind.config = {
             theme: {
                 extend: {
                     colors: {
@@ -41,16 +72,14 @@
         };
     </script>
 
-    <style type="text/tailwindcss">
-        @layer utilities {
-            .content-auto { content-visibility: auto; }
-            .card-shadow { box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15); }
-            .nav-shadow { box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1); }
-            .pulse-animation { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
-            @keyframes pulse {
-                0%, 100% { opacity: 1; }
-                50% { opacity: 0.7; }
-            }
+    <style type="text/css">
+        .content-auto { content-visibility: auto; }
+        .card-shadow { box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15); }
+        .nav-shadow { box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1); }
+        .pulse-animation { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
         }
     </style>
 
@@ -164,6 +193,10 @@
                         <p class="text-gray-400 text-sm mb-1">设备地址</p>
                         <p id="sle-basic-address" class="text-white font-mono"></p>
                     </div>
+                    <div class="bg-dark rounded-lg p-4">
+                        <p class="text-gray-400 text-sm mb-1">SLE使能状态</p>
+                        <p id="sle-basic-enable" class="text-danger font-semibold">启用</p>
+                    </div>
                 </div>
             </div>
 
@@ -230,6 +263,16 @@
                                 <!-- <option value="7">P节点</option> -->
                             </select>
                         </div>
+                        <div class="bg-dark rounded-lg p-4 md:col-span-2">
+                            <label for="sle-config-enable" class="block text-gray-400 text-sm mb-2">SLE使能开关</label>
+                            <div class="w-full bg-dark border border-dark-lightest rounded-lg px-4 py-2 text-white flex items-center justify-between">
+                                <span class="text-sm text-gray-300">SLE使能状态</span>
+                                <label class="auto-refresh-switch" title="开启或关闭 SLE 功能（是否使能）">
+                                    <input type="checkbox" id="sle-config-enable">
+                                    <span class="auto-refresh-slider"></span>
+                                </label>
+                            </div>
+                        </div>
                         <div class="md:col-span-2 flex justify-end">
                             <button type="button" id="sle-config-submit" class="bg-primary hover:bg-primary/80 text-white px-6 py-2 rounded-lg transition-colors flex items-center">
                                 <i class="fa fa-save mr-2"></i>
@@ -241,7 +284,7 @@
 
                 <div id="sle-tcp-card" class="bg-dark-lighter rounded-xl p-6 card-shadow lg:col-span-2">
                     <div class="flex items-center justify-between mb-4">
-                        <h3 class="text-xl font-semibold text-white">TCP client</h3>
+                        <h3 class="text-xl font-semibold text-white">设置发送数据通道</h3>
                     </div>
 
                     <div class="grid grid-cols-1 gap-4">
@@ -266,7 +309,7 @@
                                 <div class="flex justify-end">
                                     <button type="button" id="sle-tcp-send-button" class="bg-primary hover:bg-primary/80 text-white px-6 py-2 rounded-lg transition-colors flex items-center">
                                         <i class="fa fa-paper-plane mr-2"></i>
-                                        <span>发送</span>
+                                        <span>设置</span>
                                         <span id="sle-tcp-send-loading" class="hidden ml-2"><div class="loader w-4 h-4 border-2 border-white rounded-full"></div></span>
                                     </button>
                                 </div>

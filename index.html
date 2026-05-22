@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>星闪动态子网管理系统 - 登录</title>
+    <title>星闪网关配置工具 - 登录</title>
 
     <!-- 登录页独立样式；不复用 dashboard 布局，避免全局变量冲突 -->
     <link rel="stylesheet" href="css/login.css" />
@@ -41,7 +41,7 @@
             <!-- 登录卡片主体：标题、输入框、辅助操作与提交按钮 -->
             <div class="login-container">
                 <div class="login-header">
-                    <h2>星闪动态子网管理系统</h2>
+                    <h2>星闪网关配置工具</h2>
                     <p>欢迎回来，请验证您的身份</p>
                 </div>
 
@@ -56,6 +56,10 @@
                         <label for="password">密码</label>
                         <input type="password" id="password" placeholder="请输入密码" autocomplete="current-password" required />
                         <span class="focus-border" aria-hidden="true"></span>
+                    </div>
+
+                    <div class="form-actions" aria-label="修改密码" style="justify-content: flex-end; margin-top: -4px;">
+                        <a href="#" class="forgot-password" style="font-size: 12px;">修改密码</a>
                     </div>
 
                     <!-- <div class="form-actions">
