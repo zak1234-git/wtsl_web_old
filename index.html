@@ -38,44 +38,96 @@
                 </div>
             </div>
 
-            <!-- 登录卡片主体：标题、输入框、辅助操作与提交按钮 -->
+            <!-- 登录卡片主体：标题、切换、表单与提交按钮 -->
             <div class="login-container">
                 <div class="login-header">
                     <h2>星闪网关配置工具</h2>
-                    <p>欢迎回来，请验证您的身份</p>
+                    <p id="authSubtitle">欢迎回来，请验证您的身份</p>
                 </div>
 
-                <form class="login-form" id="loginForm">
-                    <div class="input-group">
-                        <label for="username">账号</label>
-                        <input type="text" id="username" placeholder="请输入用户名" autocomplete="username" required />
-                        <span class="focus-border" aria-hidden="true"></span>
-                    </div>
+                <div class="auth-panels">
+                    <form class="login-form auth-panel is-active" id="loginForm" data-auth-panel="login">
+                        <div class="input-group">
+                            <label for="loginUsername">账号</label>
+                            <input type="text" id="loginUsername" name="username" placeholder="请输入用户名" autocomplete="username" required />
+                            <span class="focus-border" aria-hidden="true"></span>
+                        </div>
 
-                    <div class="input-group">
-                        <label for="password">密码</label>
-                        <input type="password" id="password" placeholder="请输入密码" autocomplete="current-password" required />
-                        <span class="focus-border" aria-hidden="true"></span>
-                    </div>
+                        <div class="input-group">
+                            <label for="loginPassword">密码</label>
+                            <input type="password" id="loginPassword" name="password" placeholder="请输入密码" autocomplete="current-password" required />
+                            <span class="focus-border" aria-hidden="true"></span>
+                        </div>
 
-                    <div class="form-actions" aria-label="修改密码" style="justify-content: flex-end; margin-top: -4px;">
-                        <a href="#" class="forgot-password" style="font-size: 12px;">修改密码</a>
-                    </div>
+                        <button type="submit" class="login-btn">
+                            <span>登 录</span>
+                            <div class="btn-bg" aria-hidden="true"></div>
+                        </button>
 
-                    <!-- <div class="form-actions">
-                        <label class="checkbox-container">
-                            <input type="checkbox" />
-                            <span class="checkmark" aria-hidden="true"></span>
-                            记住我
-                        </label>
-                        <a href="#" class="forgot-password">忘记密码？</a>
-                    </div> -->
+                        <div class="form-actions auth-switch" aria-label="注册与修改密码">
+                            <button type="button" class="text-link" data-auth-tab="register">注册</button>
+                            <button type="button" class="text-link" data-auth-tab="change">修改密码</button>
+                        </div>
+                    </form>
 
-                    <button type="submit" class="login-btn">
-                        <span>登 录</span>
-                        <div class="btn-bg" aria-hidden="true"></div>
-                    </button>
-                </form>
+                    <form class="login-form auth-panel" id="registerForm" data-auth-panel="register">
+                        <div class="input-group">
+                            <label for="registerUsername">账号</label>
+                            <input type="text" id="registerUsername" name="username" placeholder="请输入用户名" autocomplete="username" required />
+                            <span class="focus-border" aria-hidden="true"></span>
+                        </div>
+
+                        <div class="input-group">
+                            <label for="registerPassword">密码</label>
+                            <input type="password" id="registerPassword" name="password" placeholder="请输入密码" autocomplete="new-password" required />
+                            <span class="focus-border" aria-hidden="true"></span>
+                        </div>
+
+                        <div class="input-group">
+                            <label for="registerPasswordConfirm">确认密码</label>
+                            <input type="password" id="registerPasswordConfirm" name="passwordConfirm" placeholder="请再次输入密码" autocomplete="new-password" required />
+                            <span class="focus-border" aria-hidden="true"></span>
+                        </div>
+
+                        <button type="submit" class="login-btn">
+                            <span>注 册</span>
+                            <div class="btn-bg" aria-hidden="true"></div>
+                        </button>
+
+                        <div class="form-actions auth-back" aria-label="返回登录">
+                            <button type="button" class="text-link" data-auth-tab="login">返回登录</button>
+                        </div>
+                    </form>
+
+                    <form class="login-form auth-panel" id="changePasswordForm" data-auth-panel="change">
+                        <div class="input-group">
+                            <label for="changeUsername">账号</label>
+                            <input type="text" id="changeUsername" name="username" placeholder="请输入用户名" autocomplete="username" required />
+                            <span class="focus-border" aria-hidden="true"></span>
+                        </div>
+
+                        <div class="input-group">
+                            <label for="oldPassword">旧密码</label>
+                            <input type="password" id="oldPassword" name="oldpassword" placeholder="请输入旧密码" autocomplete="current-password" required />
+                            <span class="focus-border" aria-hidden="true"></span>
+                        </div>
+
+                        <div class="input-group">
+                            <label for="newPassword">新密码</label>
+                            <input type="password" id="newPassword" name="newpassword" placeholder="请输入新密码" autocomplete="new-password" required />
+                            <span class="focus-border" aria-hidden="true"></span>
+                        </div>
+
+                        <button type="submit" class="login-btn">
+                            <span>确 认 修 改</span>
+                            <div class="btn-bg" aria-hidden="true"></div>
+                        </button>
+
+                        <div class="form-actions auth-back" aria-label="返回登录">
+                            <button type="button" class="text-link" data-auth-tab="login">返回登录</button>
+                        </div>
+                    </form>
+                </div>
             </div>
         </section>
     </div>

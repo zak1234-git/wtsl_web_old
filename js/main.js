@@ -18,6 +18,24 @@ let API_SERVER = {};
 let API_CONFIG = {};
 let ADV_API_CONFIG = {}; // 高级信息相关接口独立配置，避免污染通用配置
 
+// 统一的登录态 token 存储键
+const AUTH_TOKEN_KEY = 'auth_token';
+
+// 优先读取当前会话 token，回退到配置中的 token
+function getAuthToken() {
+    return sessionStorage.getItem(AUTH_TOKEN_KEY) || API_CONFIG.token || '';
+}
+
+// 按需注入 Authorization 头，避免污染已有 headers
+function buildAuthHeaders(baseHeaders) {
+    const headers = Object.assign({}, baseHeaders || {});
+    const token = getAuthToken();
+    if (token && !headers.Authorization) {
+        headers.Authorization = `Bearer ${token}`;
+    }
+    return headers;
+}
+
 // 场景测试配置（用于说明与接口映射）
 const SCENARIO_TESTS = {
     throughput: {
@@ -83,6 +101,11 @@ function addEventListenerIf(element, eventName, handler) {
  */
 function fetchWithTimeoutCompat(url, options, timeoutMs) {
     const finalOptions = options || {};
+    if (finalOptions.headers) {
+        finalOptions.headers = buildAuthHeaders(finalOptions.headers);
+    } else {
+        finalOptions.headers = buildAuthHeaders();
+    }
     const resolvedTimeout = timeoutMs || API_CONFIG.timeout || 10000;
     const hasAbortController = typeof AbortController !== 'undefined';
 
@@ -358,7 +381,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         const apiConfig = await initApiConfig();
         // 这里可以调用 API（例如使用 apiConfig.getDevBasicinfoUrl 发送请求）
-        console.log('可使用的接口地址:', apiConfig.getDevBasicinfoUrl);
+        console.log('可使用的接口地址:', apiConfig.getDevBasicInfoUrl);
 
         // 然后尝试从网络获取
         init();
@@ -417,7 +440,7 @@ async function fetchAndRenderBssInfo() {
     try {
         const response = await fetch(API_CONFIG.showBssInfoGNodesUrl, {
             method: 'GET',
-            headers: { 'Content-Type': 'application/json' },
+            headers: buildAuthHeaders({ 'Content-Type': 'application/json' }),
         });
 
         if (!response.ok) {
@@ -481,7 +504,8 @@ async function initApiConfig() {
     };
  
     // 3. 动态生成 API_CONFIG（使用最新的 ip 和 port）
-    API_CONFIG = {
+        const sessionToken = sessionStorage.getItem(AUTH_TOKEN_KEY) || '';
+        API_CONFIG = {
       getDevBasicInfoUrl: `http://${API_SERVER.ip}:${API_SERVER.port}/api/v1/nodes/0/basicinfo`,
       getDevConnInfoUrl: `http://${API_SERVER.ip}:${API_SERVER.port}/api/v1/nodes/0/conninfo`,
           setNodeUrl: `http://${API_SERVER.ip}:${API_SERVER.port}/api/v1/nodes/0/basicinfo`,
@@ -494,11 +518,12 @@ async function initApiConfig() {
       uploadFirmwareUrl: `http://${API_SERVER.ip}:${API_SERVER.port}/api/v1/nodes/0/firmware/upload`, // 上传API端点
       autoJoinNetworkUrl: `http://${API_SERVER.ip}:${API_SERVER.port}/api/v1/nodes/0/autoJoinNetwork`,
       timeSyncUrl: `http://${API_SERVER.ip}:${API_SERVER.port}/api/v1/nodes/0/timesync`,
-      timeout: 10000
+            timeout: 10000,
+            token: sessionToken || config.token || config.authToken || ''
     };
 
     // 维护独立的高级信息接口配置（可携带独立token）
-    setAdvApiConfig(API_SERVER.ip, API_SERVER.port, config.token || config.authToken, API_CONFIG.timeout);
+    setAdvApiConfig(API_SERVER.ip, API_SERVER.port, API_CONFIG.token, API_CONFIG.timeout);
 
     console.log('API config :', API_CONFIG);
     return API_CONFIG; // 返回初始化后的配置，供其他逻辑使用
@@ -518,9 +543,10 @@ async function initApiConfig() {
       uploadFirmwareUrl: 'http://localhost:8080/api/v1/nodes/0/firmware/upload', // 上传API端点
       autojoinNetworkUrl: 'http://localhost:8080/api/v1/nodes/0/autojoinNetwork',
       timeSyncUrl: 'http://localhost:8080/api/v1/nodes/0/timesync',
-      timeout: 10000
+            timeout: 10000,
+            token: sessionStorage.getItem(AUTH_TOKEN_KEY) || ''
     };
-        setAdvApiConfig('localhost', '8080', '', API_CONFIG.timeout);
+                setAdvApiConfig('localhost', '8080', API_CONFIG.token, API_CONFIG.timeout);
     return API_CONFIG;
   }
 }
@@ -628,12 +654,9 @@ async function syncTimeWithServer() {
     if (!API_CONFIG || !API_CONFIG.timeSyncUrl) return;
 
     try {
-        var syncHeaders = {
+        var syncHeaders = buildAuthHeaders({
             'Content-Type': 'application/json'
-        };
-        if (API_CONFIG.token) {
-            syncHeaders.Authorization = 'Bearer ' + API_CONFIG.token;
-        }
+        });
         const res = await fetchWithTimeoutCompat(API_CONFIG.timeSyncUrl, {
             method: 'POST',
             headers: syncHeaders,
@@ -1356,6 +1379,7 @@ async function uploadFirmware() {
         // 发送真实POST请求
         const response = await fetch(API_CONFIG.uploadFirmwareUrl, {
             method: 'POST',
+            headers: buildAuthHeaders(),
             body: formData, // 使用FormData而非JSON，适合文件上传
             // 注意： 上传文件时不要设置Content-Type为application/json，
             //浏览器会自动设置为 multipart/form-data 并添加边界
@@ -1551,17 +1575,17 @@ async function fetchDeviceInfo() {
         const [basicInfoResponse, connInfoResponse] = await Promise.all([
             fetch(API_CONFIG.getDevBasicInfoUrl, { 
                 method: 'GET',
-                headers: {
+                headers: buildAuthHeaders({
                     'Content-Type': 'application/json'
-                }
+                })
             }).then(function (response) {
                 return response;
             }),
             fetch(API_CONFIG.getDevConnInfoUrl, { 
                 method: 'GET',
-                headers: {
+                headers: buildAuthHeaders({
                     'Content-Type': 'application/json'
-                }
+                })
             }).then(function (response) {
                 return response;
             })
@@ -1580,13 +1604,22 @@ async function fetchDeviceInfo() {
         const connInfo = await connInfoResponse.json();
 
         // 验证数据有效性
-        if (!basicInfo || !connInfo) {
-            throw new Error('获取的数据不完整');
+        if (!basicInfo || !basicInfo.data) {
+            throw new Error('基础信息返回为空');
+        }
+        if (basicInfo.status && basicInfo.status !== true && basicInfo.status !== 'success') {
+            throw new Error(basicInfo.message || '基础信息返回异常');
+        }
+        if (!connInfo || !connInfo.data) {
+            throw new Error('连接信息返回为空');
+        }
+        if (connInfo.status && connInfo.status !== true && connInfo.status !== 'success') {
+            throw new Error(connInfo.message || '连接信息返回异常');
         }
 
         // 合并设备信息
         // Edge42 兼容：避免对象展开语法，使用 Object.assign 合并对象。
-        currentDevice = Object.assign({}, basicInfo.data || {}, connInfo.deviceInfo || {});
+        currentDevice = Object.assign({}, basicInfo.data || {});
         // 从basicinfo中读取flag值，并转换为布尔值
         currentDevice.auto_join = basicInfo.data && basicInfo.data.aj_flag === 1;
         connectedDevices = connInfo.data || [];
@@ -1671,10 +1704,7 @@ async function fetchAdvancedInfo(silent = false, skipUiUpdate = false) {
     const timeoutMs = ADV_API_CONFIG.timeout || API_CONFIG.timeout || 10000;
 
     // 设置请求头，包含必要的认证信息
-    const headers = { 'Content-Type': 'application/json' };
-    if (ADV_API_CONFIG.token) {
-        headers['Authorization'] = `Bearer ${ADV_API_CONFIG.token}`;
-    }
+    const headers = buildAuthHeaders({ 'Content-Type': 'application/json' });
 
     try {
         // 发送GET请求以获取高级信息
@@ -1691,7 +1721,10 @@ async function fetchAdvancedInfo(silent = false, skipUiUpdate = false) {
         // 解析响应数据
         const result = await response.json();
         if (!result || !result.data) {
-            throw new Error('未获取到高级信息数据');
+            if (!silent) {
+                throw new Error('未获取到高级信息数据');
+            }
+            return;
         }
         if (result.status && result.status !== true && result.status !== 'success') {
             throw new Error(result.message || '高级信息返回异常');
@@ -2287,7 +2320,7 @@ async function handleSaveBasicSettings() {
         // 发送设置到API
         const response = await fetch(API_CONFIG.setNodeUrl, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: buildAuthHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify(postData),
             timeout: API_CONFIG.timeout
         });
@@ -2441,10 +2474,7 @@ async function handleSaveAdvancedSettings() {
         }
 
         // 设置请求头
-        const headers = { 'Content-Type': 'application/json' };
-        if (ADV_API_CONFIG.token) {
-            headers['Authorization'] = `Bearer ${ADV_API_CONFIG.token}`;
-        }
+        const headers = buildAuthHeaders({ 'Content-Type': 'application/json' });
 
         // 发送POST请求保存高级参数
         const response = await fetch(ADV_API_CONFIG.setAdvInfoUrl, {
@@ -2734,11 +2764,9 @@ async function connectToGNode(mac, idx, name) {
         // 发送真实POST请求到connectGNodeUrl，传入id参数
         const response = await fetch(API_CONFIG.connectGNodeUrl, {
             method: 'POST',
-            headers: { 
-                'Content-Type': 'application/json',
-                // 可根据需要添加认证头
-                // 'Authorization': `Bearer ${getAuthToken()}`
-            },
+            headers: buildAuthHeaders({
+                'Content-Type': 'application/json'
+            }),
             body: JSON.stringify({ 
                 index: idx  // 按照要求传入id参数，使用mac作为标识符
             }),
