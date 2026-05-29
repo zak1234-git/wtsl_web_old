@@ -22,6 +22,10 @@ let SLE_API_CONFIG = {
     timeout: 10000
 };
 
+// 复用主站登录态 token，保持接口鉴权一致
+const AUTH_TOKEN_KEY = 'auth_token';
+const getAuthToken = () => sessionStorage.getItem(AUTH_TOKEN_KEY) || '';
+
 /* 示例数据：如需演示可解开注释
 const sleDemoData = {
     basic: { name: 'SLE-DEV-01', address: '00:11:22:33:44:55' },
@@ -227,10 +231,11 @@ const loadSleApiConfig = async () => {
             const ip = data.serverip || data.ip || 'localhost';
             const port = data.port || data.serverport || '8080';
             const baseUrl = data.baseUrl || `http://${ip}:${port}`;
+            const sessionToken = getAuthToken();
             // Edge42 兼容：避免对象展开语法，改为 Object.assign。
             SLE_API_CONFIG = Object.assign({}, SLE_API_CONFIG, {
                 baseUrl: baseUrl,
-                token: data.token || ''
+                token: sessionToken || data.token || ''
             });
             return;
         } catch (err) {

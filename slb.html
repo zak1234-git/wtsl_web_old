@@ -10,7 +10,7 @@
         // 用 location.replace 跳回登录页，并中止后续脚本执行。
         // ─────────────────────────────────────────────────────────────────
         (function () {
-            if (!sessionStorage.getItem('_auth')) {
+            if (!sessionStorage.getItem('auth_token')) {
                 window.location.replace('index.html');
             }
         })();
