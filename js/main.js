@@ -17,6 +17,7 @@ let autoJoinRequestInProgress = false;
 let API_SERVER = {};
 let API_CONFIG = {};
 let ADV_API_CONFIG = {}; // 高级信息相关接口独立配置，避免污染通用配置
+let SECURITY_API_CONFIG = {}; // 安全管理接口（iptables/QoS等）
 
 // 统一的登录态 token 存储键
 const AUTH_TOKEN_KEY = 'auth_token';
@@ -374,8 +375,25 @@ document.addEventListener('DOMContentLoaded', async () => {
                 deviceSCfgIdx: document.getElementById('device-s-cfg-idx'),
                 deviceRangeOpt: document.getElementById('device-range-opt'),
                 deviceacsenable: document.getElementById('device-acs-enable'),
-                deviceChipTemperature: document.getElementById('device-chip-temperature')
+                deviceChipTemperature: document.getElementById('device-chip-temperature'),
+
+                // 防火墙页面元素
+                firewallRulesTable: document.getElementById('firewall-rules-table'),
+                firewallRefreshRules: document.getElementById('firewall-refresh-rules'),
+                firewallClearRules: document.getElementById('firewall-clear-rules'),
+                firewallAddRule: document.getElementById('firewall-add-rule'),
+                firewallRuleForm: document.getElementById('firewall-rule-form'),
+                firewallSrcIpList: document.getElementById('firewall-src-ip-list'),
+                firewallDstIpList: document.getElementById('firewall-dst-ip-list'),
+                firewallAddSrcIp: document.getElementById('firewall-add-src-ip'),
+                firewallAddDstIp: document.getElementById('firewall-add-dst-ip'),
+                firewallProtocol: document.getElementById('firewall-protocol'),
+                firewallSrcPort: document.getElementById('firewall-src-port'),
+                firewallDstPort: document.getElementById('firewall-dst-port'),
+                firewallPolicy: document.getElementById('firewall-policy')
         };
+
+            ensureFirewallIpRows();
 
             initThemeControls();
 
@@ -504,8 +522,8 @@ async function initApiConfig() {
     };
  
     // 3. 动态生成 API_CONFIG（使用最新的 ip 和 port）
-        const sessionToken = sessionStorage.getItem(AUTH_TOKEN_KEY) || '';
-        API_CONFIG = {
+    const sessionToken = sessionStorage.getItem(AUTH_TOKEN_KEY) || '';
+    API_CONFIG = {
       getDevBasicInfoUrl: `http://${API_SERVER.ip}:${API_SERVER.port}/api/v1/nodes/0/basicinfo`,
       getDevConnInfoUrl: `http://${API_SERVER.ip}:${API_SERVER.port}/api/v1/nodes/0/conninfo`,
           setNodeUrl: `http://${API_SERVER.ip}:${API_SERVER.port}/api/v1/nodes/0/basicinfo`,
@@ -520,6 +538,15 @@ async function initApiConfig() {
       timeSyncUrl: `http://${API_SERVER.ip}:${API_SERVER.port}/api/v1/nodes/0/timesync`,
             timeout: 10000,
             token: sessionToken || config.token || config.authToken || ''
+    };
+
+    // 安全管理接口：单独列出路径，便于后续扩展 QoS/iptables 等入口
+    SECURITY_API_CONFIG = {
+        aclGetRulesUrl: `http://${API_SERVER.ip}:${API_SERVER.port}/api/v1/nodes/0/acl/rules`,
+        aclPostRuleUrl: `http://${API_SERVER.ip}:${API_SERVER.port}/api/v1/nodes/0/acl/rules`,
+        aclClearRulesUrl: `http://${API_SERVER.ip}:${API_SERVER.port}/api/v1/nodes/0/acl/clear_rules`,
+        timeout: API_CONFIG.timeout,
+        token: API_CONFIG.token
     };
 
     // 维护独立的高级信息接口配置（可携带独立token）
@@ -545,6 +572,14 @@ async function initApiConfig() {
       timeSyncUrl: 'http://localhost:8080/api/v1/nodes/0/timesync',
             timeout: 10000,
             token: sessionStorage.getItem(AUTH_TOKEN_KEY) || ''
+    };
+    // 安全管理接口：默认回退地址
+    SECURITY_API_CONFIG = {
+        aclGetRulesUrl: 'http://localhost:8080/api/v1/nodes/0/acl/rules',
+        aclPostRuleUrl: 'http://localhost:8080/api/v1/nodes/0/acl/rules',
+        aclClearRulesUrl: 'http://localhost:8080/api/v1/nodes/0/acl/clear_rules',
+        timeout: API_CONFIG.timeout,
+        token: API_CONFIG.token
     };
                 setAdvApiConfig('localhost', '8080', API_CONFIG.token, API_CONFIG.timeout);
     return API_CONFIG;
@@ -692,6 +727,387 @@ function updateFooterMode(pageId) {
     }
 }
 
+// 安全管理：避免服务端返回的规则文本带来 XSS 风险
+function escapeHtml(value) {
+    return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+// 安全管理：兼容 rules 返回为对象/数组的情况，统一为字符串数组
+function normalizeAclLines(data) {
+    if (!data) return [];
+    if (Array.isArray(data)) return data;
+    if (typeof data === 'object') {
+        return Object.keys(data)
+            .sort()
+            .map(key => data[key])
+            .filter(Boolean);
+    }
+    return [];
+}
+
+// 安全管理：从 iptables 规则行中解析关键字段
+function parseAclLine(line) {
+    const srcIpMatch = line.match(/\-s\s+([^\s]+)/);
+    const dstIpMatch = line.match(/\-d\s+([^\s]+)/);
+    const protocolMatch = line.match(/\-p\s+([^\s]+)/);
+    const srcPortMatch = line.match(/\-\-sport\s+([^\s]+)/);
+    const dstPortMatch = line.match(/\-\-dport\s+([^\s]+)/);
+    const policyMatch = line.match(/\-j\s+([^\s]+)/);
+
+    return {
+        srcIp: srcIpMatch ? srcIpMatch[1] : '-',
+        dstIp: dstIpMatch ? dstIpMatch[1] : '-',
+        protocol: protocolMatch ? protocolMatch[1] : '-',
+        srcPort: srcPortMatch ? srcPortMatch[1] : '-',
+        dstPort: dstPortMatch ? dstPortMatch[1] : '-',
+        policy: policyMatch ? policyMatch[1] : '-'
+    };
+}
+
+// 安全管理：渲染规则列表表格
+function renderAclRules(lines) {
+    if (!elements.firewallRulesTable) return;
+
+    elements.firewallRulesTable.innerHTML = '';
+    if (!lines || lines.length === 0) {
+        elements.firewallRulesTable.innerHTML =
+            '<tr class="border-b border-dark-lightest">' +
+                '<td class="py-3 px-4 text-gray-300" colspan="7">' +
+                    '<div class="flex items-center justify-center text-sm text-gray-400">' +
+                        '<i class="fa fa-info-circle mr-2"></i>暂无规则' +
+                    '</div>' +
+                '</td>' +
+            '</tr>';
+        return;
+    }
+
+    lines.forEach((line) => {
+        const parsed = parseAclLine(line);
+        const row = document.createElement('tr');
+        row.className = 'border-b border-dark-lightest';
+        row.innerHTML =
+            '<td class="py-3 px-4 text-gray-300">' + escapeHtml(parsed.srcIp) + '</td>' +
+            '<td class="py-3 px-4 text-gray-300">' + escapeHtml(parsed.srcPort) + '</td>' +
+            '<td class="py-3 px-4 text-gray-300">' + escapeHtml(parsed.dstIp) + '</td>' +
+            '<td class="py-3 px-4 text-gray-300">' + escapeHtml(parsed.dstPort) + '</td>' +
+            '<td class="py-3 px-4 text-gray-300">' + escapeHtml(parsed.protocol) + '</td>' +
+            '<td class="py-3 px-4 text-gray-300">' + escapeHtml(parsed.policy) + '</td>' +
+            '<td class="py-3 px-4 text-gray-500 text-sm">仅支持清空</td>';
+        elements.firewallRulesTable.appendChild(row);
+    });
+}
+
+// 安全管理：查询访问控制规则
+async function fetchAclRules(silent) {
+    if (!SECURITY_API_CONFIG.aclGetRulesUrl) return;
+
+    try {
+        const response = await fetchWithTimeoutCompat(SECURITY_API_CONFIG.aclGetRulesUrl, {
+            method: 'GET',
+            headers: buildAuthHeaders({ 'Content-Type': 'application/json' })
+        }, SECURITY_API_CONFIG.timeout);
+
+        if (!response.ok) {
+            throw new Error(`规则获取失败: ${response.status}`);
+        }
+
+        const result = await response.json();
+        if (result && result.status && result.status !== 'success') {
+            throw new Error(result.message || '规则获取失败');
+        }
+
+        const lines = normalizeAclLines(result && result.data);
+        renderAclRules(lines);
+    } catch (error) {
+        renderAclRules([]);
+        if (!silent) {
+            showNotification('获取规则失败', error.message || '规则获取失败', true);
+        }
+    }
+}
+
+function parseIpListInput(raw) {
+    return (raw || '')
+        .split(',')
+        .map(item => item.trim())
+        .filter(Boolean);
+}
+
+// 安全管理：自动识别端口输入格式（范围或数组）
+// - "1000-2000" => { type: "range", value: "1000-2000" }
+// - "80,443,8080" => { type: "array", value: [80, 443, 8080] }
+function parsePortAutoInput(raw, label) {
+    const value = (raw || '').trim();
+    if (!value) {
+        return null;
+    }
+
+    if (/^\d+\s*-\s*\d+$/.test(value)) {
+        return {
+            type: 'range',
+            value: value.replace(/\s+/g, '')
+        };
+    }
+
+    const parts = value.split(',').map(item => item.trim()).filter(Boolean);
+    if (parts.length === 0) {
+        return null;
+    }
+
+    const nums = parts.map((item) => {
+        const num = parseInt(item, 10);
+        if (Number.isNaN(num)) {
+            throw new Error(`${label}端口数组格式不正确`);
+        }
+        return num;
+    });
+
+    return {
+        type: 'array',
+        value: nums
+    };
+}
+
+// 安全管理：获取源IP输入行集合
+function getFirewallSrcIpRows() {
+    if (!elements.firewallSrcIpList) return [];
+    return Array.from(elements.firewallSrcIpList.querySelectorAll('.firewall-src-ip-row'));
+}
+
+// 安全管理：获取目标IP输入行集合
+function getFirewallDstIpRows() {
+    if (!elements.firewallDstIpList) return [];
+    return Array.from(elements.firewallDstIpList.querySelectorAll('.firewall-dst-ip-row'));
+}
+
+// 安全管理：根据行数更新源IP删除按钮可用状态（至少保留一行）
+function updateFirewallSrcIpRemoveButtons() {
+    const rows = getFirewallSrcIpRows();
+    const shouldDisable = rows.length <= 1;
+
+    rows.forEach((row) => {
+        const removeButton = row.querySelector('.firewall-remove-src-ip');
+        if (!removeButton) return;
+        removeButton.disabled = shouldDisable;
+        removeButton.classList.toggle('opacity-50', shouldDisable);
+        removeButton.classList.toggle('cursor-not-allowed', shouldDisable);
+    });
+}
+
+// 安全管理：根据行数更新目标IP删除按钮可用状态（至少保留一行）
+function updateFirewallDstIpRemoveButtons() {
+    const rows = getFirewallDstIpRows();
+    const shouldDisable = rows.length <= 1;
+
+    rows.forEach((row) => {
+        const removeButton = row.querySelector('.firewall-remove-dst-ip');
+        if (!removeButton) return;
+        removeButton.disabled = shouldDisable;
+        removeButton.classList.toggle('opacity-50', shouldDisable);
+        removeButton.classList.toggle('cursor-not-allowed', shouldDisable);
+    });
+}
+
+// 安全管理：新增一行源IP输入
+function addFirewallSrcIpRow(value = '') {
+    if (!elements.firewallSrcIpList) return;
+
+    const row = document.createElement('div');
+    row.className = 'grid grid-cols-1 md:grid-cols-12 gap-3 firewall-src-ip-row';
+    row.innerHTML =
+        '<div class="md:col-span-9">' +
+            '<input type="text" class="w-full bg-dark border border-dark-lightest rounded-lg px-4 py-2 text-white font-mono focus:outline-none focus:ring-2 focus:ring-primary/50 firewall-src-ip-input" placeholder="源IP (支持逗号分隔)">' +
+        '</div>' +
+        '<div class="md:col-span-3 flex md:justify-end">' +
+            '<button type="button" class="firewall-remove-src-ip bg-dark border border-dark-lightest hover:bg-dark-lightest text-gray-300 px-3 py-2 rounded-lg transition-colors text-sm">删除</button>' +
+        '</div>';
+
+    const srcInput = row.querySelector('.firewall-src-ip-input');
+    if (srcInput) srcInput.value = value;
+
+    elements.firewallSrcIpList.appendChild(row);
+    updateFirewallSrcIpRemoveButtons();
+}
+
+// 安全管理：新增一行目标IP输入
+function addFirewallDstIpRow(value = '') {
+    if (!elements.firewallDstIpList) return;
+
+    const row = document.createElement('div');
+    row.className = 'grid grid-cols-1 md:grid-cols-12 gap-3 firewall-dst-ip-row';
+    row.innerHTML =
+        '<div class="md:col-span-9">' +
+            '<input type="text" class="w-full bg-dark border border-dark-lightest rounded-lg px-4 py-2 text-white font-mono focus:outline-none focus:ring-2 focus:ring-primary/50 firewall-dst-ip-input" placeholder="目标IP (支持逗号分隔)">' +
+        '</div>' +
+        '<div class="md:col-span-3 flex md:justify-end">' +
+            '<button type="button" class="firewall-remove-dst-ip bg-dark border border-dark-lightest hover:bg-dark-lightest text-gray-300 px-3 py-2 rounded-lg transition-colors text-sm">删除</button>' +
+        '</div>';
+
+    const dstInput = row.querySelector('.firewall-dst-ip-input');
+    if (dstInput) dstInput.value = value;
+
+    elements.firewallDstIpList.appendChild(row);
+    updateFirewallDstIpRemoveButtons();
+}
+
+// 安全管理：确保源/目标IP输入区至少各有一行，并同步删除按钮状态
+function ensureFirewallIpRows() {
+    if (getFirewallSrcIpRows().length === 0) {
+        addFirewallSrcIpRow();
+    } else {
+        updateFirewallSrcIpRemoveButtons();
+    }
+
+    if (getFirewallDstIpRows().length === 0) {
+        addFirewallDstIpRow();
+    } else {
+        updateFirewallDstIpRemoveButtons();
+    }
+}
+
+// 安全管理：收集并扁平化所有源IP输入
+function collectFirewallSrcIps() {
+    const srcIps = [];
+    getFirewallSrcIpRows().forEach((row) => {
+        const srcInput = row.querySelector('.firewall-src-ip-input');
+        parseIpListInput(srcInput ? srcInput.value : '').forEach(ip => srcIps.push(ip));
+    });
+    return srcIps;
+}
+
+// 安全管理：收集并扁平化所有目标IP输入
+function collectFirewallDstIps() {
+    const dstIps = [];
+    getFirewallDstIpRows().forEach((row) => {
+        const dstInput = row.querySelector('.firewall-dst-ip-input');
+        parseIpListInput(dstInput ? dstInput.value : '').forEach(ip => dstIps.push(ip));
+    });
+    return dstIps;
+}
+
+// 安全管理：重置IP输入区域到初始状态（仅保留一行空输入）
+function resetFirewallIpRows() {
+    const srcRows = getFirewallSrcIpRows();
+    if (srcRows.length === 0) {
+        addFirewallSrcIpRow();
+    } else {
+        srcRows.forEach((row, index) => {
+            if (index > 0) row.remove();
+        });
+        const srcFirstRow = getFirewallSrcIpRows()[0];
+        const firstSrcInput = srcFirstRow ? srcFirstRow.querySelector('.firewall-src-ip-input') : null;
+        if (firstSrcInput) firstSrcInput.value = '';
+        updateFirewallSrcIpRemoveButtons();
+    }
+
+    const dstRows = getFirewallDstIpRows();
+    if (dstRows.length === 0) {
+        addFirewallDstIpRow();
+    } else {
+        dstRows.forEach((row, index) => {
+            if (index > 0) row.remove();
+        });
+        const dstFirstRow = getFirewallDstIpRows()[0];
+        const firstDstInput = dstFirstRow ? dstFirstRow.querySelector('.firewall-dst-ip-input') : null;
+        if (firstDstInput) firstDstInput.value = '';
+        updateFirewallDstIpRemoveButtons();
+    }
+}
+
+// 安全管理：提交新增访问控制规则
+async function handleAddAclRule() {
+    if (!SECURITY_API_CONFIG.aclPostRuleUrl) return;
+
+    const protocol = elements.firewallProtocol ? elements.firewallProtocol.value : '';
+    const policy = elements.firewallPolicy ? elements.firewallPolicy.value : '';
+
+    if (!policy) {
+        showNotification('操作失败', '请选择策略', true);
+        return;
+    }
+
+    try {
+        const payload = { policy };
+        const srcIps = collectFirewallSrcIps();
+        const dstIps = collectFirewallDstIps();
+
+        if (srcIps.length > 0) payload.src_ip = srcIps;
+        if (dstIps.length > 0) payload.dst_ip = dstIps;
+        if (protocol) payload.protocol = [protocol];
+
+        const srcPortPayload = parsePortAutoInput(elements.firewallSrcPort ? elements.firewallSrcPort.value : '', '源');
+        if (srcPortPayload) {
+            payload.src_port_type = srcPortPayload.type;
+            payload.src_port = srcPortPayload.value;
+        }
+
+        const dstPortPayload = parsePortAutoInput(elements.firewallDstPort ? elements.firewallDstPort.value : '', '目标');
+        if (dstPortPayload) {
+            payload.dst_port_type = dstPortPayload.type;
+            payload.dst_port = dstPortPayload.value;
+        }
+
+        const response = await fetchWithTimeoutCompat(SECURITY_API_CONFIG.aclPostRuleUrl, {
+            method: 'POST',
+            headers: buildAuthHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify(payload)
+        }, SECURITY_API_CONFIG.timeout);
+
+        if (!response.ok) {
+            throw new Error(`规则添加失败: ${response.status}`);
+        }
+
+        const result = await response.json();
+        if (result && result.status && result.status !== 'success') {
+            throw new Error(result.message || '规则添加失败');
+        }
+
+        if (elements.firewallRuleForm) {
+            elements.firewallRuleForm.reset();
+        }
+        resetFirewallIpRows();
+        showNotification('操作成功', '规则已添加', false);
+        fetchAclRules(true);
+    } catch (error) {
+        showNotification('操作失败', error.message || '规则添加失败', true);
+    }
+}
+
+// 安全管理：清空访问控制规则
+async function handleClearAclRules() {
+    if (!SECURITY_API_CONFIG.aclClearRulesUrl) return;
+
+    if (!confirm('确定要清空所有规则吗？')) {
+        return;
+    }
+
+    try {
+        const response = await fetchWithTimeoutCompat(SECURITY_API_CONFIG.aclClearRulesUrl, {
+            method: 'GET',
+            headers: buildAuthHeaders({ 'Content-Type': 'application/json' })
+        }, SECURITY_API_CONFIG.timeout);
+
+        if (!response.ok) {
+            throw new Error(`清空失败: ${response.status}`);
+        }
+
+        const result = await response.json();
+        if (result && result.status && result.status !== 'success') {
+            throw new Error(result.message || '清空失败');
+        }
+
+        showNotification('操作成功', '规则已清空', false);
+        fetchAclRules(true);
+    } catch (error) {
+        showNotification('操作失败', error.message || '清空失败', true);
+    }
+}
+
 // 设置事件监听器
 function setupEventListeners() {
     // 移动端菜单切换
@@ -747,6 +1163,46 @@ function setupEventListeners() {
             elements.selectedFileName.classList.add('text-primary');
         }
     });
+
+    // 防火墙配置
+    addEventListenerIf(elements.firewallRefreshRules, 'click', () => {
+        fetchAclRules(true);
+    });
+    addEventListenerIf(elements.firewallClearRules, 'click', handleClearAclRules);
+    addEventListenerIf(elements.firewallAddRule, 'click', handleAddAclRule);
+    addEventListenerIf(elements.firewallAddSrcIp, 'click', () => {
+        addFirewallSrcIpRow();
+    });
+    addEventListenerIf(elements.firewallAddDstIp, 'click', () => {
+        addFirewallDstIpRow();
+    });
+    addEventListenerIf(elements.firewallSrcIpList, 'click', (event) => {
+        const removeButton = event.target.closest('.firewall-remove-src-ip');
+        if (!removeButton) return;
+
+        const row = removeButton.closest('.firewall-src-ip-row');
+        if (!row) return;
+
+        if (getFirewallSrcIpRows().length <= 1) {
+            return;
+        }
+        row.remove();
+        updateFirewallSrcIpRemoveButtons();
+    });
+    addEventListenerIf(elements.firewallDstIpList, 'click', (event) => {
+        const removeButton = event.target.closest('.firewall-remove-dst-ip');
+        if (!removeButton) return;
+
+        const row = removeButton.closest('.firewall-dst-ip-row');
+        if (!row) return;
+
+        if (getFirewallDstIpRows().length <= 1) {
+            return;
+        }
+        row.remove();
+        updateFirewallDstIpRemoveButtons();
+    });
+    addEventListenerIf(elements.firewallRuleForm, 'submit', (e) => e.preventDefault());
     
     // 新增设备类型变更监听器，确保设置表单与设备信息同步
     addEventListenerIf(elements.deviceTypeSelect, 'change', function() {
@@ -2246,6 +2702,10 @@ function switchPage(pageId) {
         startBssPolling();
     } else {
         stopBssPolling();
+    }
+
+    if (pageId === 'firewall-config') {
+        fetchAclRules(true);
     }
 }
 
