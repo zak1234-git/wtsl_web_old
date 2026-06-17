@@ -398,6 +398,11 @@
                         <p id="device-version" class="text-white font-medium"></p>
                     </div>
 
+                    <div class="bg-dark rounded-lg p-4">
+                        <p class="text-gray-400 text-sm mb-1">无线开关</p>
+                        <p id="device-wlen" class="text-white font-medium"></p>
+                    </div>
+
                     <!-- 移除已连接G节点信息区域 -->
                 </div>
             </div>
@@ -563,6 +568,14 @@
                             <label for="settings-version" class="block text-sm font-medium text-gray-300 mb-1">固件版本</label>
                             <input type="text" id="settings-version" class="w-full bg-dark border border-dark-lightest rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-primary/50" readonly>
                             <p class="mt-1 text-xs text-gray-500">版本号不可直接修改，请通过“软件升级”功能更新</p>
+                        </div>
+
+                        <div>
+                            <label for="settings-wlen" class="block text-sm font-medium text-gray-300 mb-1">无线开关</label>
+                            <select id="settings-wlen" class="w-full bg-dark border border-dark-lightest rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-primary/50">
+                                <option value="1">开启</option>
+                                <option value="0">关闭</option>
+                            </select>
                         </div>
                     </div>
 
@@ -764,6 +777,42 @@
                                 </div>
                             </div>
                         </div>
+                    </div>
+                </div>
+
+                <!-- IO 管理区 -->
+                <div class="mt-6 bg-dark-lighter rounded-xl p-6 card-shadow">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-xl font-semibold text-white">IO 管理</h3>
+                        <div class="flex items-center gap-3">
+                            <span class="text-sm text-gray-400">IO 数量：</span>
+                            <span id="io-count" class="text-lg font-bold text-primary">--</span>
+                            <button type="button" id="io-refresh-btn" class="bg-primary hover:bg-primary/80 text-white px-4 py-2 rounded-lg transition-colors text-sm flex items-center">
+                                <i class="fa fa-refresh mr-1"></i>刷新
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- IO 状态表格 -->
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full">
+                            <thead>
+                                <tr class="border-b border-dark">
+                                    <th class="py-3 px-4 text-left text-gray-400 font-medium">IO 编号</th>
+                                    <th class="py-3 px-4 text-left text-gray-400 font-medium">当前状态</th>
+                                    <th class="py-3 px-4 text-left text-gray-400 font-medium">操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="io-status-table">
+                                <tr class="border-b border-dark-lightest">
+                                    <td class="py-3 px-4 text-gray-300" colspan="3">
+                                        <div class="flex items-center justify-center text-sm text-gray-400">
+                                            <i class="fa fa-info-circle mr-2"></i>点击"刷新"加载 IO 状态
+                                        </div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </section>

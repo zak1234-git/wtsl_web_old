@@ -251,6 +251,11 @@ const ACS_ENABLE_LABELS = {
     1: '开启'
 };
 
+const WLEN_LABELS = {
+    0: '关闭',
+    1: '开启'
+};
+
 // API服务器配置 - 提取IP和端口为独立变量，方便修改
 //const API_SERVER = {
 //    ip: '',  // API服务器IP地址
@@ -390,7 +395,16 @@ document.addEventListener('DOMContentLoaded', async () => {
                 firewallProtocol: document.getElementById('firewall-protocol'),
                 firewallSrcPort: document.getElementById('firewall-src-port'),
                 firewallDstPort: document.getElementById('firewall-dst-port'),
-                firewallPolicy: document.getElementById('firewall-policy')
+                firewallPolicy: document.getElementById('firewall-policy'),
+
+                // 无线开关元素
+                deviceWlen: document.getElementById('device-wlen'),
+                settingsWlen: document.getElementById('settings-wlen'),
+
+                // IO 管脚管理元素
+                ioCount: document.getElementById('io-count'),
+                ioRefreshBtn: document.getElementById('io-refresh-btn'),
+                ioStatusTable: document.getElementById('io-status-table')
         };
 
             ensureFirewallIpRows();
@@ -534,8 +548,12 @@ async function initApiConfig() {
       upgradeFirmwareUrl: `http://${API_SERVER.ip}:${API_SERVER.port}/api/v1/nodes/0/firmware/upgrade`,
       getUpgradeHistoryUrl: `http://${API_SERVER.ip}:${API_SERVER.port}/api/v1/getUpgradeHistory`,
       uploadFirmwareUrl: `http://${API_SERVER.ip}:${API_SERVER.port}/api/v1/nodes/0/firmware/upload`, // 上传API端点
-      autoJoinNetworkUrl: `http://${API_SERVER.ip}:${API_SERVER.port}/api/v1/nodes/0/autoJoinNetwork`,
+      autoJoinNetworkUrl: `http://${API_SERVER.ip}:${API_SERVER.port}/api/v1/nodes/0/autojoinNetwork`,
       timeSyncUrl: `http://${API_SERVER.ip}:${API_SERVER.port}/api/v1/nodes/0/timesync`,
+      wlenUrl: `http://${API_SERVER.ip}:${API_SERVER.port}/api/v1/nodes/0/wlen`,
+      ioNumUrl: `http://${API_SERVER.ip}:${API_SERVER.port}/api/v1/nodes/0/ionum`,
+      ioGetUrl: `http://${API_SERVER.ip}:${API_SERVER.port}/api/v1/nodes/0/ioget`,
+      ioSetUrl: `http://${API_SERVER.ip}:${API_SERVER.port}/api/v1/nodes/0/ioset`,
             timeout: 10000,
             token: sessionToken || config.token || config.authToken || ''
     };
@@ -570,6 +588,10 @@ async function initApiConfig() {
       uploadFirmwareUrl: 'http://localhost:8080/api/v1/nodes/0/firmware/upload', // 上传API端点
       autojoinNetworkUrl: 'http://localhost:8080/api/v1/nodes/0/autojoinNetwork',
       timeSyncUrl: 'http://localhost:8080/api/v1/nodes/0/timesync',
+      wlenUrl: 'http://localhost:8080/api/v1/nodes/0/wlen',
+      ioNumUrl: 'http://localhost:8080/api/v1/nodes/0/ionum',
+      ioGetUrl: 'http://localhost:8080/api/v1/nodes/0/ioget',
+      ioSetUrl: 'http://localhost:8080/api/v1/nodes/0/ioset',
             timeout: 10000,
             token: sessionStorage.getItem(AUTH_TOKEN_KEY) || ''
     };
@@ -1232,6 +1254,9 @@ function setupEventListeners() {
     // 高级参数联动
     addEventListenerIf(elements.cpTypeSelect, 'change', () => updateSymbolTypeOptions());
     addEventListenerIf(elements.sCfgIdxSelect, 'change', () => updateSymbolTypeOptions());
+
+    // IO 管脚刷新按钮
+    addEventListenerIf(elements.ioRefreshBtn, 'click', refreshAllIo);
 
     // 场景配置：卡片选择与开始测试
     initScenarioSelection();
@@ -2094,6 +2119,9 @@ async function fetchDeviceInfo() {
         // 追加获取高级信息，使用独立接口（静默 + 跳过UI刷新，避免重复绘制）
         await fetchAdvancedInfo(true, true);
 
+        // 追加获取无线开关状态
+        fetchWlenStatus(true);
+
         // 隐藏默认数据指示器
         if (elements.deviceInfoDefaultIndicator) elements.deviceInfoDefaultIndicator.classList.add('hidden');
         if (elements.connectedDevicesDefaultIndicator) elements.connectedDevicesDefaultIndicator.classList.add('hidden');
@@ -2253,6 +2281,7 @@ function updateDeviceDisplay() {
     const deviceServeripEl = document.getElementById('device-server-ipconfig');
     const deviceServerportEl = document.getElementById('device-server-portconfig');
     const deviceVersionEl = document.getElementById('device-version');
+    const deviceWlenEl = document.getElementById('device-wlen');
     
     // 设备名称使用essid的值，确保有默认值
     if (deviceNameEl) {
@@ -2291,6 +2320,16 @@ function updateDeviceDisplay() {
     }
     if (deviceVersionEl) {
         deviceVersionEl.textContent = currentDevice.version || '未知版本';
+    }
+
+    // 无线开关显示
+    if (deviceWlenEl) {
+        var wlenVal = currentDevice.wlen;
+        if (wlenVal !== undefined && wlenVal !== null) {
+            deviceWlenEl.textContent = WLEN_LABELS[wlenVal] || wlenVal;
+        } else {
+            deviceWlenEl.textContent = '未知';
+        }
     }
 
     // 高级参数显示
@@ -2381,6 +2420,7 @@ function populateSettingsForm() {
     const serveripEl = document.getElementById('setting-server-ip');
     const serverportEl = document.getElementById('setting-server-port');
     const versionEl = document.getElementById('settings-version');
+    const wlenEl = document.getElementById('settings-wlen');
     const cellIdEl = elements.cellIdInput;
     const cpTypeEl = elements.cpTypeSelect;
     const sCfgIdxEl = elements.sCfgIdxSelect;
@@ -2403,6 +2443,7 @@ function populateSettingsForm() {
     if (serveripEl) serveripEl.value = currentDevice.net_manage_ip;
     if (serverportEl) serverportEl.value = currentDevice.log_port;
     if (versionEl) versionEl.value = currentDevice.version;
+    if (wlenEl && currentDevice.wlen !== undefined) wlenEl.value = currentDevice.wlen;
     if (cellIdEl && currentDevice.cell_id !== undefined) cellIdEl.value = currentDevice.cell_id;
     if (cpTypeEl && currentDevice.cp_type !== undefined) cpTypeEl.value = currentDevice.cp_type;
     if (sCfgIdxEl && currentDevice.s_cfg_idx !== undefined) sCfgIdxEl.value = currentDevice.s_cfg_idx;
@@ -2707,6 +2748,12 @@ function switchPage(pageId) {
     if (pageId === 'firewall-config') {
         fetchAclRules(true);
     }
+
+    if (pageId === 'scenario-test') {
+        setTimeout(function () {
+            refreshAllIo();
+        }, 300);
+    }
 }
 
 // 保存基础参数
@@ -2726,6 +2773,7 @@ async function handleSaveBasicSettings() {
     const serviceBandwidthEl = document.getElementById('settings-service-bandwidth');
     const serveripEl = document.getElementById('setting-server-ip');
     const serverportEl = document.getElementById('setting-server-port');
+    const wlenEl = document.getElementById('settings-wlen');
     
     // 验证所有必填字段
     if (!nameEl.value || !ipEl.value) {
@@ -2798,8 +2846,12 @@ async function handleSaveBasicSettings() {
             bw: parseInt(physicalBandwidthEl.value),
             tfc_bw: parseInt(serviceBandwidthEl.value),
             net_manage_ip: serveripEl.value,
-            log_port: parseInt(serverportEl.value)
+            log_port: parseInt(serverportEl.value),
+            wlen: parseInt(wlenEl.value)
         });
+
+        // 单独保存无线开关设置
+        saveWlenSetting(true);
         
         // 强制更新UI显示，确保设备类型同步显示
         updateDeviceDisplay();
@@ -3309,4 +3361,291 @@ function showNotification(title, message, isError = false) {
     setTimeout(() => {
         notification.classList.add('translate-x-full');
     }, 3000);
+}
+
+// ==================== 无线开关 (WLEN) ====================
+
+/**
+ * 查询无线开关状态
+ */
+async function fetchWlenStatus(silent) {
+    if (!API_CONFIG.wlenUrl) return;
+
+    try {
+        var headers = buildAuthHeaders({ 'Content-Type': 'application/json' });
+        var response = await fetchWithTimeoutCompat(API_CONFIG.wlenUrl, {
+            method: 'GET',
+            headers: headers
+        }, API_CONFIG.timeout);
+
+        if (!response.ok) {
+            throw new Error('HTTP ' + response.status);
+        }
+
+        var result = await response.json();
+        if (result && result.status === 'success' && result.data) {
+            currentDevice.wlen = result.data.enable;
+            updateDeviceDisplay();
+            populateSettingsForm();
+        } else if (!silent) {
+            throw new Error(result.message || '无线开关状态获取失败');
+        }
+    } catch (error) {
+        if (!silent) {
+            console.error('获取无线开关状态失败:', error);
+            showNotification('无线开关', '获取状态失败: ' + error.message, true);
+        }
+    }
+}
+
+/**
+ * 设置无线开关值
+ */
+async function saveWlenSetting(silent) {
+    if (!API_CONFIG.wlenUrl) return;
+    if (!elements.settingsWlen) return;
+
+    var enableVal = parseInt(elements.settingsWlen.value);
+    if (enableVal !== 0 && enableVal !== 1) return;
+
+    try {
+        var headers = buildAuthHeaders({ 'Content-Type': 'application/json' });
+        var response = await fetchWithTimeoutCompat(API_CONFIG.wlenUrl, {
+            method: 'POST',
+            headers: headers,
+            body: JSON.stringify({ enable: enableVal })
+        }, API_CONFIG.timeout);
+
+        if (!response.ok) {
+            throw new Error('HTTP ' + response.status);
+        }
+
+        var result = await response.json();
+        if (result && result.status === 'success') {
+            currentDevice.wlen = enableVal;
+            updateDeviceDisplay();
+            if (!silent) {
+                showNotification('无线开关', '设置成功', false);
+            }
+        } else {
+            throw new Error(result.message || '无线开关设置失败');
+        }
+    } catch (error) {
+        if (!silent) {
+            console.error('设置无线开关失败:', error);
+            showNotification('无线开关', '设置失败: ' + error.message, true);
+        }
+    }
+}
+
+// ==================== IO 管脚管理 ====================
+
+/**
+ * 刷新全部 IO 状态：先获取 IO 数量，再逐个获取状态
+ */
+async function refreshAllIo() {
+    if (!elements.ioRefreshBtn) return;
+
+    elements.ioRefreshBtn.disabled = true;
+    var btnHtml = elements.ioRefreshBtn.innerHTML;
+    elements.ioRefreshBtn.innerHTML = '<i class="fa fa-spinner fa-spin mr-1"></i>加载中...';
+
+    try {
+        // 1. 获取 IO 数量
+        var ioNum = await fetchIoNum();
+        if (ioNum === null || ioNum <= 0) {
+            if (elements.ioCount) elements.ioCount.textContent = '0';
+            if (elements.ioStatusTable) {
+                elements.ioStatusTable.innerHTML =
+                    '<tr class="border-b border-dark-lightest">' +
+                        '<td class="py-3 px-4 text-gray-300" colspan="3">' +
+                            '<div class="flex items-center justify-center text-sm text-gray-400">' +
+                                '<i class="fa fa-info-circle mr-2"></i>无可用 IO' +
+                            '</div>' +
+                        '</td>' +
+                    '</tr>';
+            }
+            return;
+        }
+
+        if (elements.ioCount) elements.ioCount.textContent = ioNum;
+
+        // 2. 并行获取所有 IO 状态（单个失败不影响整体）
+        var ioPromises = [];
+        for (var i = 0; i < ioNum; i++) {
+            ioPromises.push((function (ioIdx) {
+                return fetchIoStatus(ioIdx).then(function (val) {
+                    return { io: ioIdx, value: val };
+                }).catch(function () {
+                    return { io: ioIdx, value: null };
+                });
+            })(i));
+        }
+        var ioDataList = await Promise.all(ioPromises);
+
+        // 按 IO 编号排序
+        ioDataList.sort(function (a, b) { return a.io - b.io; });
+
+        renderIoTable(ioDataList);
+    } catch (error) {
+        console.error('刷新 IO 状态失败:', error);
+        showNotification('IO 管理', '刷新失败: ' + error.message, true);
+    } finally {
+        if (elements.ioRefreshBtn) {
+            elements.ioRefreshBtn.disabled = false;
+            elements.ioRefreshBtn.innerHTML = btnHtml;
+        }
+    }
+}
+
+/**
+ * 获取 IO 有效数量
+ * @returns {number|null}
+ */
+async function fetchIoNum() {
+    if (!API_CONFIG.ioNumUrl) return null;
+
+    try {
+        var headers = buildAuthHeaders({ 'Content-Type': 'application/json' });
+        var response = await fetchWithTimeoutCompat(API_CONFIG.ioNumUrl, {
+            method: 'GET',
+            headers: headers
+        }, API_CONFIG.timeout);
+
+        if (!response.ok) {
+            throw new Error('HTTP ' + response.status);
+        }
+
+        var result = await response.json();
+        if (result && result.status === 'success' && result.data) {
+            return result.data.num;
+        }
+        throw new Error(result.message || 'IO 数量获取失败');
+    } catch (error) {
+        console.error('获取 IO 数量失败:', error);
+        return null;
+    }
+}
+
+/**
+ * 获取单个 IO 管脚值
+ * @param {number} ioNum - IO 编号
+ * @returns {number|null} 0 或 1
+ */
+async function fetchIoStatus(ioNum) {
+    if (!API_CONFIG.ioGetUrl) return null;
+
+    try {
+        var headers = buildAuthHeaders({ 'Content-Type': 'application/json' });
+        var response = await fetchWithTimeoutCompat(API_CONFIG.ioGetUrl, {
+            method: 'POST',
+            headers: headers,
+            body: JSON.stringify({ io: ioNum })
+        }, API_CONFIG.timeout);
+
+        if (!response.ok) {
+            throw new Error('HTTP ' + response.status);
+        }
+
+        var result = await response.json();
+        if (result && result.status === 'success' && result.data) {
+            return result.data.value;
+        }
+        throw new Error(result.message || 'IO 状态获取失败');
+    } catch (error) {
+        console.error('获取 IO ' + ioNum + ' 状态失败:', error);
+        return null;
+    }
+}
+
+/**
+ * 设置单个 IO 管脚值
+ * @param {number} ioNum - IO 编号
+ * @param {number} value - 0 低电平 / 1 高电平
+ */
+async function setIoValue(ioNum, value) {
+    if (!API_CONFIG.ioSetUrl) return;
+
+    try {
+        var headers = buildAuthHeaders({ 'Content-Type': 'application/json' });
+        var response = await fetchWithTimeoutCompat(API_CONFIG.ioSetUrl, {
+            method: 'POST',
+            headers: headers,
+            body: JSON.stringify({ io: ioNum, value: value })
+        }, API_CONFIG.timeout);
+
+        if (!response.ok) {
+            throw new Error('HTTP ' + response.status);
+        }
+
+        var result = await response.json();
+        if (result && result.status === 'success') {
+            showNotification('IO 设置', 'IO ' + ioNum + ' 已设为 ' + (value === 1 ? '高电平' : '低电平'), false);
+            // 刷新整个表格
+            refreshAllIo();
+        } else {
+            throw new Error(result.message || 'IO 设置失败');
+        }
+    } catch (error) {
+        console.error('设置 IO ' + ioNum + ' 失败:', error);
+        showNotification('IO 设置', '设置失败: ' + error.message, true);
+    }
+}
+
+/**
+ * 渲染 IO 状态表格
+ * @param {Array} ioDataList - [{io: number, value: number|null}]
+ */
+function renderIoTable(ioDataList) {
+    if (!elements.ioStatusTable) return;
+
+    elements.ioStatusTable.innerHTML = '';
+
+    if (!ioDataList || ioDataList.length === 0) {
+        elements.ioStatusTable.innerHTML =
+            '<tr class="border-b border-dark-lightest">' +
+                '<td class="py-3 px-4 text-gray-300" colspan="3">' +
+                    '<div class="flex items-center justify-center text-sm text-gray-400">' +
+                        '<i class="fa fa-info-circle mr-2"></i>无 IO 数据' +
+                    '</div>' +
+                '</td>' +
+            '</tr>';
+        return;
+    }
+
+    ioDataList.forEach(function (item) {
+        var row = document.createElement('tr');
+        row.className = 'border-b border-dark-lightest hover:bg-dark-lighter/50 transition-colors';
+
+        var ioVal = item.value;
+        var statusHtml = '';
+        if (ioVal === null || ioVal === undefined) {
+            statusHtml = '<span class="text-gray-500">未知</span>';
+        } else if (ioVal === 1) {
+            statusHtml = '<span class="px-2 py-1 rounded-full text-xs font-medium bg-dark-lightest text-gray-400">高电平 (1)</span>';
+        } else {
+            statusHtml = '<span class="px-2 py-1 rounded-full text-xs font-medium bg-dark-lightest text-gray-400">低电平 (0)</span>';
+        }
+
+        row.innerHTML =
+            '<td class="py-3 px-4 text-white font-medium">IO ' + item.io + '</td>' +
+            '<td class="py-3 px-4">' + statusHtml + '</td>' +
+            '<td class="py-3 px-4">' +
+                '<button onclick="setIoValue(' + item.io + ', 1)" class="px-3 py-1 mr-2 bg-success/20 hover:bg-success/30 text-success text-sm rounded-lg transition-colors">' +
+                    '<i class="fa fa-arrow-up mr-1"></i>置高' +
+                '</button>' +
+                '<button onclick="setIoValue(' + item.io + ', 0)" class="px-3 py-1 mr-2 bg-success/20 hover:bg-success/30 text-success text-sm rounded-lg transition-colors">' +
+                    '<i class="fa fa-arrow-down mr-1"></i>置低' +
+                '</button>' +
+            '</td>';
+
+        elements.ioStatusTable.appendChild(row);
+    });
+}
+
+/**
+ * 切换到高级配置页面时自动加载 IO 状态
+ */
+function loadIoOnPageSwitch() {
+    refreshAllIo();
 }
